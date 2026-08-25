@@ -37,11 +37,11 @@ body {
 .app {
   display: flex;
   flex-direction: column;
-  width: min(100vw, calc(100dvh * 1080 / 2400));
-  height: min(100dvh, calc(100vw * 2400 / 1080));
-  max-width: 1080px;
+  width: min(100vw, calc(100dvh * 1200 / 2400));
+  height: min(100dvh, calc(100vw * 2400 / 1200));
+  max-width: 1200px;
   max-height: 2400px;
-  aspect-ratio: 1080 / 2400;
+  aspect-ratio: 1 / 2;
   margin: 0 auto;
   background: var(--fantasy-bg-deep);
   box-shadow:

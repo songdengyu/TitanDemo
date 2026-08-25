@@ -6,8 +6,19 @@
   flex-direction: column;
   overflow: hidden;
   background:
-    linear-gradient(180deg, transparent 0 51.5%, rgba(38, 76, 42, 0.12) 52%, #315b35 100%),
-    #2b214e url('/assets/fantasy-pack/battle-background.svg') center top / 100% 100% no-repeat;
+    radial-gradient(ellipse 18% 4% at 18% 63%, rgba(25, 66, 34, 0.22) 0 62%, transparent 66%),
+    radial-gradient(ellipse 24% 5% at 76% 72%, rgba(27, 69, 35, 0.2) 0 62%, transparent 66%),
+    radial-gradient(ellipse 15% 3% at 45% 88%, rgba(34, 82, 42, 0.18) 0 62%, transparent 66%),
+    linear-gradient(
+      180deg,
+      #2f214f 0%,
+      #4c3268 21%,
+      #765078 38%,
+      #c67b68 50%,
+      #538d4b 52%,
+      #3d763e 73%,
+      #326436 100%
+    );
 }
 
 .combatTap {
@@ -25,10 +36,28 @@
   flex-shrink: 0;
 }
 
+.battleZone::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: -3px;
+  left: 0;
+  z-index: 0;
+  height: 14px;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 18px 8px at 8% 100%, #79a954 0 60%, transparent 64%),
+    radial-gradient(ellipse 24px 9px at 31% 100%, #6e9f4c 0 60%, transparent 64%),
+    radial-gradient(ellipse 20px 8px at 56% 100%, #82b15a 0 60%, transparent 64%),
+    radial-gradient(ellipse 26px 9px at 83% 100%, #6b9b49 0 60%, transparent 64%),
+    linear-gradient(180deg, #76a952, #4d813f);
+  border-bottom: 2px solid rgba(37, 76, 39, 0.55);
+}
+
 .skyTop {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(25, 18, 47, 0.18), transparent 38%);
+  background: none;
   pointer-events: none;
 }
 
@@ -39,7 +68,7 @@
   transform: translateX(-50%);
   width: 200px;
   height: 200px;
-  background: radial-gradient(circle, rgba(255, 221, 137, 0.12) 0%, transparent 70%);
+  background: none;
   pointer-events: none;
 }
 
