@@ -1,0 +1,821 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useReducer,
+  useRef,
+  type ReactNode,
+} from 'react'
+import { INITIAL_HEROES, getHeroDps, getHeroUpgradeCost, type Hero } from '../data/heroes'
+import {
+  createEmptyDeployedSlots,
+  findFirstEmptySlot,
+  getDeployedHeroIds,
+  isHeroDeployed,
+} from '../utils/platformLayout'
+import { INITIAL_MAIN_HERO, getMainHeroDps, type MainHero } from '../data/mainHero'
+import { calcGoldReward, createMonster, createRandomNormalMonster } from '../data/monsters'
+import { COMBAT_RESUME_GRACE_SEC } from '../data/combat'
+import {
+  INITIAL_SKILL_LEVELS,
+  getSkillById,
+  getSkillUpgradeCost,
+} from '../data/skills'
+import {
+  EQUIPPED_WEAPON_DEFAULT,
+  INITIAL_EQUIPPED_WEAPON_ID,
+  INITIAL_WEAPON_INVENTORY,
+  getMainFireInterval,
+  getWeaponUpgradeCost,
+  getWeaponPower,
+  WEAPON_CATALOG,
+  type Weapon,
+} from '../data/weapons'
+
+export type ActiveTab = 'equipment' | 'skills' | 'heroes'
+export type SecondaryView = null | 'weapon'
+
+export interface MonsterState {
+  name: string
+  maxHp: number
+  currentHp: number
+}
+
+export type MonsterPhase = 'fighting' | 'dying' | 'spawning'
+
+const MONSTER_HIT_EFFECT_INTERVAL_SEC = 0.35
+
+export interface PendingMonsterTransition {
+  stage: number
+  killCount: number
+  isBoss: boolean
+  bossFailed: boolean
+  bossTimer: number
+  monster: MonsterState
+  toast: string | null
+}
+
+export interface GameState {
+  stage: number
+  killCount: number
+  isBoss: boolean
+  bossTimer: number
+  bossFailed: boolean
+  monster: MonsterState
+  monsterPhase: MonsterPhase
+  pendingTransition: PendingMonsterTransition | null
+  combatGraceRemaining: number
+  gold: number
+  mainHero: MainHero
+  heroes: Hero[]
+  deployedSlots: (string | null)[]
+  toast: string | null
+  showBossFailModal: boolean
+  goldFlash: boolean
+  goldDropId: number
+  goldDropAmount: number
+  skillLevels: Record<string, number>
+  monsterHit: boolean
+  monsterHitCooldown: number
+  autoBattle: boolean
+  activeTab: ActiveTab
+  secondaryView: SecondaryView
+  showHeroOverlay: boolean
+  equippedWeaponId: string
+  equippedWeapon: Weapon
+  weaponInventory: Weapon[]
+  selectedWeaponId: string | null
+  dialog: DialogConfig | null
+}
+
+export interface DialogConfig {
+  title: string
+  message: string
+  confirmText?: string
+  cancelText?: string | null
+}
+
+type GameAction =
+  | { type: 'TICK'; deltaSeconds: number }
+  | { type: 'DEPLOY_HERO'; heroId: string }
+  | { type: 'WITHDRAW_HERO'; heroId: string }
+  | { type: 'CHALLENGE_BOSS' }
+  | { type: 'RETREAT_BOSS' }
+  | { type: 'DISMISS_BOSS_FAIL' }
+  | { type: 'CLEAR_TOAST' }
+  | { type: 'CLEAR_HIT' }
+  | { type: 'CLEAR_GOLD_FLASH' }
+  | { type: 'TOGGLE_AUTO_BATTLE' }
+  | { type: 'MAIN_HERO_ATTACK'; multiplier: number }
+  | { type: 'UPGRADE_SKILL'; skillId: string }
+  | { type: 'UPGRADE_HERO'; heroId: string }
+  | { type: 'UPGRADE_WEAPON'; weaponId: string }
+  | { type: 'SET_ACTIVE_TAB'; tab: ActiveTab }
+  | { type: 'OPEN_WEAPON_PICKER' }
+  | { type: 'CLOSE_SECONDARY_VIEW' }
+  | { type: 'OPEN_HERO_OVERLAY' }
+  | { type: 'CLOSE_HERO_OVERLAY' }
+  | { type: 'SELECT_WEAPON'; weaponId: string }
+  | { type: 'EQUIP_WEAPON'; weaponId: string }
+  | { type: 'SHOW_TOAST'; message: string }
+  | { type: 'SHOW_DIALOG'; dialog: DialogConfig }
+  | { type: 'MONSTER_DEATH_COMPLETE' }
+  | { type: 'MONSTER_SPAWN_COMPLETE' }
+  | { type: 'HIDE_DIALOG' }
+
+const initialMonster = createMonster(1, 0, false)
+
+const initialState: GameState = {
+  stage: 1,
+  killCount: 0,
+  isBoss: false,
+  bossTimer: 30,
+  bossFailed: false,
+  monster: initialMonster,
+  monsterPhase: 'fighting',
+  pendingTransition: null,
+  combatGraceRemaining: 0,
+  gold: 0,
+  mainHero: INITIAL_MAIN_HERO,
+  heroes: INITIAL_HEROES,
+  deployedSlots: createEmptyDeployedSlots(),
+  toast: null,
+  showBossFailModal: false,
+  goldFlash: false,
+  goldDropId: 0,
+  goldDropAmount: 0,
+  skillLevels: INITIAL_SKILL_LEVELS,
+  monsterHit: false,
+  monsterHitCooldown: 0,
+  autoBattle: false,
+  activeTab: 'equipment',
+  secondaryView: null,
+  showHeroOverlay: false,
+  equippedWeaponId: INITIAL_EQUIPPED_WEAPON_ID,
+  equippedWeapon: EQUIPPED_WEAPON_DEFAULT,
+  weaponInventory: INITIAL_WEAPON_INVENTORY,
+  selectedWeaponId: null,
+  dialog: null,
+}
+
+function getEquippedWeapon(state: GameState): Weapon {
+  return state.equippedWeapon
+}
+
+function getTotalDps(state: GameState): number {
+  const heroDps = getDeployedHeroIds(state.deployedSlots).reduce((sum, id) => {
+    const hero = state.heroes.find((h) => h.id === id)
+    return sum + (hero ? getHeroDps(hero) : 0)
+  }, 0)
+  return getMainHeroDps(state.mainHero, getEquippedWeapon(state)) + heroDps
+}
+
+function getDeployedHeroesDps(state: GameState): number {
+  return getDeployedHeroIds(state.deployedSlots).reduce((sum, id) => {
+    const hero = state.heroes.find((h) => h.id === id)
+    return sum + (hero ? getHeroDps(hero) : 0)
+  }, 0)
+}
+
+function applyDamage(state: GameState, damage: number): GameState {
+  if (state.monsterPhase !== 'fighting' || damage <= 0) return state
+
+  const newHp = Math.max(0, state.monster.currentHp - damage)
+  if (newHp > 0) {
+    return {
+      ...state,
+      monster: { ...state.monster, currentHp: newHp },
+    }
+  }
+
+  return startMonsterTransition({
+    ...state,
+    monster: { ...state.monster, currentHp: 0 },
+  })
+}
+
+function computeNextAfterKill(state: GameState): PendingMonsterTransition & { gold: number } {
+  const goldGain = calcGoldReward(state.stage, state.isBoss)
+  const gold = state.gold + goldGain
+
+  if (state.isBoss) {
+    return {
+      gold,
+      stage: state.stage + 1,
+      killCount: 0,
+      isBoss: false,
+      bossFailed: false,
+      bossTimer: 30,
+      monster: createMonster(state.stage + 1, 0, false),
+      toast: `击败 Boss！进入第 ${state.stage + 1} 关`,
+    }
+  }
+
+  if (state.bossFailed) {
+    return {
+      gold,
+      stage: state.stage,
+      killCount: state.killCount,
+      isBoss: false,
+      bossFailed: state.bossFailed,
+      bossTimer: state.bossTimer,
+      monster: createRandomNormalMonster(state.stage),
+      toast: null,
+    }
+  }
+
+  const newKillCount = state.killCount + 1
+
+  if (newKillCount >= 10) {
+    return {
+      gold,
+      stage: state.stage,
+      killCount: 10,
+      isBoss: true,
+      bossFailed: false,
+      bossTimer: 30,
+      monster: createMonster(state.stage, 9, true),
+      toast: 'Boss 出现！30 秒内击败它',
+    }
+  }
+
+  return {
+    gold,
+    stage: state.stage,
+    killCount: newKillCount,
+    isBoss: false,
+    bossFailed: false,
+    bossTimer: state.bossTimer,
+    monster: createMonster(state.stage, newKillCount, false),
+    toast: null,
+  }
+}
+
+function startMonsterTransition(state: GameState): GameState {
+  const next = computeNextAfterKill(state)
+  const { gold, toast, ...pending } = next
+
+  return {
+    ...state,
+    monsterPhase: 'dying',
+    gold,
+    goldFlash: true,
+    goldDropId: state.goldDropId + 1,
+    goldDropAmount: gold - state.gold,
+    toast,
+    pendingTransition: { ...pending, toast },
+  }
+}
+
+function handleBossTimeout(state: GameState): GameState {
+  return {
+    ...state,
+    isBoss: false,
+    bossFailed: true,
+    bossTimer: 30,
+    showBossFailModal: true,
+    monster: createRandomNormalMonster(state.stage),
+    monsterPhase: 'spawning',
+    pendingTransition: null,
+  }
+}
+
+function deployHero(state: GameState, heroId: string): GameState {
+  const hero = state.heroes.find((h) => h.id === heroId)
+  if (!hero || hero.level <= 0) {
+    return state
+  }
+
+  if (isHeroDeployed(state.deployedSlots, heroId)) {
+    return state
+  }
+
+  const emptyIndex = findFirstEmptySlot(state.deployedSlots)
+  if (emptyIndex >= 0) {
+    const deployedSlots = [...state.deployedSlots]
+    deployedSlots[emptyIndex] = heroId
+    return {
+      ...state,
+      deployedSlots,
+      toast: `${hero.name} 已上阵`,
+    }
+  }
+
+  const deployedIds = getDeployedHeroIds(state.deployedSlots)
+  const weakestId = deployedIds.reduce((weakest, id) => {
+    const current = state.heroes.find((h) => h.id === id)!
+    const weakestHero = state.heroes.find((h) => h.id === weakest)!
+    return getHeroDps(current) < getHeroDps(weakestHero) ? id : weakest
+  })
+
+  const weakestHero = state.heroes.find((h) => h.id === weakestId)!
+  const newDps = getHeroDps(hero)
+  const weakestDps = getHeroDps(weakestHero)
+
+  if (newDps <= weakestDps) {
+    return { ...state, toast: 'DPS 不足，无法替换当前队员' }
+  }
+
+  const weakestIndex = state.deployedSlots.findIndex((id) => id === weakestId)
+  const deployedSlots = [...state.deployedSlots]
+  deployedSlots[weakestIndex] = heroId
+
+  return {
+    ...state,
+    deployedSlots,
+    toast: `${hero.name} 替换了 ${weakestHero.name}`,
+  }
+}
+
+function clearNewFlag(inventory: Weapon[], weaponId: string): Weapon[] {
+  return inventory.map((w) => (w.id === weaponId ? { ...w, isNew: false } : w))
+}
+
+function equipWeapon(state: GameState, weaponId: string): GameState {
+  const weapon = state.weaponInventory.find((w) => w.id === weaponId)
+  if (!weapon) return state
+
+  const oldWeapon = { ...state.equippedWeapon, isNew: false }
+  const newInventory = state.weaponInventory
+    .filter((w) => w.id !== weaponId)
+    .concat(oldWeapon)
+
+  return {
+    ...state,
+    equippedWeaponId: weapon.id,
+    equippedWeapon: { ...weapon, isNew: false },
+    weaponInventory: newInventory,
+    selectedWeaponId: null,
+    toast: `已装备 ${weapon.name}`,
+  }
+}
+
+function gameReducer(state: GameState, action: GameAction): GameState {
+  switch (action.type) {
+    case 'TICK': {
+      if (state.secondaryView !== null || state.showBossFailModal || state.monsterPhase !== 'fighting') return state
+
+      const hitCooldown = Math.max(0, state.monsterHitCooldown - action.deltaSeconds)
+
+      if (state.combatGraceRemaining > 0) {
+        return {
+          ...state,
+          combatGraceRemaining: Math.max(0, state.combatGraceRemaining - action.deltaSeconds),
+          monsterHitCooldown: hitCooldown,
+        }
+      }
+
+      let next = hitCooldown === state.monsterHitCooldown
+        ? state
+        : { ...state, monsterHitCooldown: hitCooldown }
+      const dps = getDeployedHeroesDps(next)
+      if (dps > 0) {
+        next = applyDamage(next, dps * action.deltaSeconds)
+        if (hitCooldown <= 0 && next.monsterPhase === 'fighting') {
+          next = {
+            ...next,
+            monsterHit: true,
+            monsterHitCooldown: MONSTER_HIT_EFFECT_INTERVAL_SEC,
+          }
+        }
+      }
+      if (next.isBoss && next.monsterPhase === 'fighting') {
+        const newTimer = next.bossTimer - action.deltaSeconds
+        if (newTimer <= 0) return handleBossTimeout(next)
+        next = { ...next, bossTimer: newTimer }
+      }
+      return next
+    }
+
+    case 'MONSTER_DEATH_COMPLETE': {
+      if (state.monsterPhase !== 'dying' || !state.pendingTransition) return state
+      const pending = state.pendingTransition
+      return {
+        ...state,
+        monsterPhase: 'spawning',
+        stage: pending.stage,
+        killCount: pending.killCount,
+        isBoss: pending.isBoss,
+        bossFailed: pending.bossFailed,
+        bossTimer: pending.bossTimer,
+        monster: pending.monster,
+        toast: pending.toast,
+      }
+    }
+
+    case 'MONSTER_SPAWN_COMPLETE':
+      if (state.monsterPhase !== 'spawning') return state
+      return {
+        ...state,
+        monsterPhase: 'fighting',
+        pendingTransition: null,
+        combatGraceRemaining: COMBAT_RESUME_GRACE_SEC,
+      }
+
+    case 'DEPLOY_HERO':
+      return deployHero(state, action.heroId)
+
+    case 'WITHDRAW_HERO': {
+      const slotIndex = state.deployedSlots.findIndex((id) => id === action.heroId)
+      if (slotIndex < 0) return state
+      const hero = state.heroes.find((h) => h.id === action.heroId)
+      const deployedSlots = [...state.deployedSlots]
+      deployedSlots[slotIndex] = null
+      return {
+        ...state,
+        deployedSlots,
+        toast: hero ? `${hero.name} 已下阵` : null,
+      }
+    }
+
+    case 'CHALLENGE_BOSS':
+      if (!state.bossFailed || state.killCount < 10) return state
+      return {
+        ...state,
+        isBoss: true,
+        bossFailed: false,
+        bossTimer: 30,
+        monster: createMonster(state.stage, 9, true),
+        monsterPhase: 'spawning',
+        pendingTransition: null,
+        toast: 'Boss 挑战开始！',
+      }
+
+    case 'RETREAT_BOSS':
+      if (!state.isBoss) return state
+      return {
+        ...state,
+        isBoss: false,
+        bossFailed: true,
+        bossTimer: 30,
+        monster: createRandomNormalMonster(state.stage),
+        monsterPhase: 'spawning',
+        pendingTransition: null,
+        toast: '已暂时撤退，可随时挑战 Boss',
+      }
+
+    case 'DISMISS_BOSS_FAIL':
+      return { ...state, showBossFailModal: false }
+
+    case 'CLEAR_TOAST':
+      return { ...state, toast: null }
+
+    case 'CLEAR_HIT':
+      return { ...state, monsterHit: false }
+
+    case 'CLEAR_GOLD_FLASH':
+      return { ...state, goldFlash: false }
+
+    case 'TOGGLE_AUTO_BATTLE':
+      return { ...state, autoBattle: !state.autoBattle }
+
+    case 'MAIN_HERO_ATTACK':
+      if (state.combatGraceRemaining > 0) return state
+      {
+        const next = applyDamage(
+          state,
+          getMainHeroDps(state.mainHero, getEquippedWeapon(state)) * action.multiplier,
+        )
+        if (state.monsterHitCooldown > 0 || next.monsterPhase !== 'fighting') return next
+        return {
+          ...next,
+          monsterHit: true,
+          monsterHitCooldown: MONSTER_HIT_EFFECT_INTERVAL_SEC,
+        }
+      }
+
+    case 'UPGRADE_SKILL': {
+      const skill = getSkillById(action.skillId)
+      if (!skill) return state
+      const level = state.skillLevels[skill.id] ?? 0
+      if (level >= skill.maxLevel || state.stage < skill.unlockStage) return state
+      if (skill.prerequisiteId && (state.skillLevels[skill.prerequisiteId] ?? 0) < (skill.prerequisiteLevel ?? 1)) return state
+      const cost = getSkillUpgradeCost(level)
+      if (state.gold < cost) return { ...state, toast: '金币不足' }
+      return {
+        ...state,
+        gold: state.gold - cost,
+        skillLevels: { ...state.skillLevels, [skill.id]: level + 1 },
+        toast: level === 0 ? `解锁技能：${skill.name}` : `${skill.name} 升至 Lv.${level + 1}`,
+      }
+    }
+
+    case 'UPGRADE_HERO': {
+      const hero = state.heroes.find((item) => item.id === action.heroId)
+      if (!hero) return state
+      const cost = getHeroUpgradeCost(hero)
+      if (state.gold < cost) return { ...state, toast: '金币不足' }
+      const heroes = state.heroes.map((item) =>
+        item.id === hero.id ? { ...item, level: item.level + 1 } : item,
+      )
+      return {
+        ...state,
+        gold: state.gold - cost,
+        heroes,
+        toast: hero.level === 0 ? `解锁英雄：${hero.name}` : `${hero.name} 升至 Lv.${hero.level + 1}`,
+      }
+    }
+
+    case 'UPGRADE_WEAPON': {
+      const catalogWeapon = WEAPON_CATALOG.find((item) => item.id === action.weaponId)
+      if (!catalogWeapon) return state
+      const owned = state.equippedWeapon.id === action.weaponId
+        ? state.equippedWeapon
+        : state.weaponInventory.find((item) => item.id === action.weaponId)
+      const weapon = owned ?? catalogWeapon
+      const cost = getWeaponUpgradeCost(weapon)
+      if (state.gold < cost) return { ...state, toast: '金币不足' }
+      const nextWeapon = { ...weapon, level: weapon.level + 1, isNew: owned ? weapon.isNew : true }
+      return {
+        ...state,
+        gold: state.gold - cost,
+        equippedWeapon: state.equippedWeapon.id === action.weaponId ? nextWeapon : state.equippedWeapon,
+        weaponInventory: state.equippedWeapon.id === action.weaponId
+          ? state.weaponInventory
+          : owned
+            ? state.weaponInventory.map((item) => item.id === action.weaponId ? nextWeapon : item)
+            : [...state.weaponInventory, nextWeapon],
+        toast: weapon.level === 0 ? `解锁武器：${weapon.name}` : `${weapon.name} 升至 Lv.${weapon.level + 1}`,
+      }
+    }
+
+    case 'SET_ACTIVE_TAB':
+      return {
+        ...state,
+        activeTab: action.tab,
+        secondaryView: null,
+        showHeroOverlay: action.tab === 'heroes',
+      }
+
+    case 'OPEN_WEAPON_PICKER':
+      return { ...state, secondaryView: 'weapon', selectedWeaponId: null }
+
+    case 'CLOSE_SECONDARY_VIEW':
+      return {
+        ...state,
+        secondaryView: null,
+        selectedWeaponId: null,
+        combatGraceRemaining: COMBAT_RESUME_GRACE_SEC,
+      }
+
+    case 'OPEN_HERO_OVERLAY':
+      return { ...state, showHeroOverlay: true, activeTab: 'heroes' }
+
+    case 'CLOSE_HERO_OVERLAY':
+      return { ...state, showHeroOverlay: false }
+
+    case 'SELECT_WEAPON':
+      return {
+        ...state,
+        selectedWeaponId: action.weaponId,
+        weaponInventory: clearNewFlag(state.weaponInventory, action.weaponId),
+      }
+
+    case 'EQUIP_WEAPON':
+      return equipWeapon(state, action.weaponId)
+
+    case 'SHOW_TOAST':
+      return { ...state, toast: action.message }
+
+    case 'SHOW_DIALOG':
+      return { ...state, dialog: action.dialog }
+
+    case 'HIDE_DIALOG':
+      return { ...state, dialog: null }
+
+    default:
+      return state
+  }
+}
+
+interface GameContextValue {
+  state: GameState
+  totalDps: number
+  mainHeroDps: number
+  mainFireInterval: number
+  equippedWeapon: Weapon
+  hasNewWeapons: boolean
+  deployHero: (heroId: string) => void
+  withdrawHero: (heroId: string) => void
+  challengeBoss: () => void
+  retreatBoss: () => void
+  dismissBossFail: () => void
+  clearToast: () => void
+  clearHit: () => void
+  clearGoldFlash: () => void
+  toggleAutoBattle: () => void
+  attackWithMainHero: (multiplier: number) => void
+  upgradeSkill: (skillId: string) => void
+  upgradeHero: (heroId: string) => void
+  upgradeWeapon: (weaponId: string) => void
+  tick: (deltaSeconds: number) => void
+  setActiveTab: (tab: ActiveTab) => void
+  openWeaponPicker: () => void
+  closeSecondaryView: () => void
+  closeHeroOverlay: () => void
+  selectWeaponInPicker: (weaponId: string) => void
+  equipWeaponAction: (weaponId: string) => void
+  showToast: (message: string) => void
+  tryEquipWeapon: () => void
+  showDialog: (dialog: DialogConfig, onConfirm?: () => void, onCancel?: () => void) => void
+  showAlert: (title: string, message: string) => void
+  confirmDialog: () => void
+  cancelDialog: () => void
+  completeMonsterDeath: () => void
+  completeMonsterSpawn: () => void
+}
+
+const GameContext = createContext<GameContextValue | null>(null)
+
+export function GameProvider({ children }: { children: ReactNode }) {
+  const [state, dispatch] = useReducer(gameReducer, initialState)
+  const onConfirmRef = useRef<(() => void) | null>(null)
+  const onCancelRef = useRef<(() => void) | null>(null)
+
+  const equippedWeapon = state.equippedWeapon
+  const totalDps = useMemo(() => getTotalDps(state), [state])
+  const mainHeroDps = useMemo(
+    () => getMainHeroDps(state.mainHero, equippedWeapon),
+    [state.mainHero, equippedWeapon],
+  )
+  const mainFireInterval = useMemo(
+    () => getMainFireInterval(equippedWeapon.attackSpeed),
+    [equippedWeapon.attackSpeed],
+  )
+  const hasNewWeapons = useMemo(
+    () => state.weaponInventory.some((w) => w.isNew),
+    [state.weaponInventory],
+  )
+
+  const deployHeroAction = useCallback((heroId: string) => dispatch({ type: 'DEPLOY_HERO', heroId }), [])
+  const withdrawHero = useCallback((heroId: string) => dispatch({ type: 'WITHDRAW_HERO', heroId }), [])
+  const challengeBoss = useCallback(() => dispatch({ type: 'CHALLENGE_BOSS' }), [])
+  const retreatBoss = useCallback(() => dispatch({ type: 'RETREAT_BOSS' }), [])
+  const dismissBossFail = useCallback(() => dispatch({ type: 'DISMISS_BOSS_FAIL' }), [])
+  const clearToast = useCallback(() => dispatch({ type: 'CLEAR_TOAST' }), [])
+  const clearHit = useCallback(() => dispatch({ type: 'CLEAR_HIT' }), [])
+  const clearGoldFlash = useCallback(() => dispatch({ type: 'CLEAR_GOLD_FLASH' }), [])
+  const toggleAutoBattle = useCallback(() => dispatch({ type: 'TOGGLE_AUTO_BATTLE' }), [])
+  const attackWithMainHero = useCallback(
+    (multiplier: number) => dispatch({ type: 'MAIN_HERO_ATTACK', multiplier }),
+    [],
+  )
+  const upgradeSkill = useCallback((skillId: string) => dispatch({ type: 'UPGRADE_SKILL', skillId }), [])
+  const upgradeHero = useCallback((heroId: string) => dispatch({ type: 'UPGRADE_HERO', heroId }), [])
+  const upgradeWeapon = useCallback((weaponId: string) => dispatch({ type: 'UPGRADE_WEAPON', weaponId }), [])
+  const completeMonsterDeath = useCallback(() => dispatch({ type: 'MONSTER_DEATH_COMPLETE' }), [])
+  const completeMonsterSpawn = useCallback(() => dispatch({ type: 'MONSTER_SPAWN_COMPLETE' }), [])
+  const tick = useCallback((deltaSeconds: number) => dispatch({ type: 'TICK', deltaSeconds }), [])
+  const setActiveTab = useCallback((tab: ActiveTab) => dispatch({ type: 'SET_ACTIVE_TAB', tab }), [])
+  const openWeaponPicker = useCallback(() => dispatch({ type: 'OPEN_WEAPON_PICKER' }), [])
+  const closeSecondaryView = useCallback(() => dispatch({ type: 'CLOSE_SECONDARY_VIEW' }), [])
+  const closeHeroOverlay = useCallback(() => dispatch({ type: 'CLOSE_HERO_OVERLAY' }), [])
+  const selectWeaponInPicker = useCallback(
+    (weaponId: string) => dispatch({ type: 'SELECT_WEAPON', weaponId }),
+    [],
+  )
+  const equipWeaponAction = useCallback(
+    (weaponId: string) => dispatch({ type: 'EQUIP_WEAPON', weaponId }),
+    [],
+  )
+  const showToast = useCallback((message: string) => dispatch({ type: 'SHOW_TOAST', message }), [])
+
+  const confirmDialog = useCallback(() => {
+    onConfirmRef.current?.()
+    onConfirmRef.current = null
+    onCancelRef.current = null
+    dispatch({ type: 'HIDE_DIALOG' })
+  }, [])
+
+  const cancelDialog = useCallback(() => {
+    onCancelRef.current?.()
+    onConfirmRef.current = null
+    onCancelRef.current = null
+    dispatch({ type: 'HIDE_DIALOG' })
+  }, [])
+
+  const showDialog = useCallback(
+    (dialog: DialogConfig, onConfirm?: () => void, onCancel?: () => void) => {
+      onConfirmRef.current = onConfirm ?? null
+      onCancelRef.current = onCancel ?? null
+      dispatch({ type: 'SHOW_DIALOG', dialog })
+    },
+    [],
+  )
+
+  const showAlert = useCallback(
+    (title: string, message: string) => {
+      showDialog({ title, message, confirmText: '确定', cancelText: null })
+    },
+    [showDialog],
+  )
+
+  const tryEquipWeapon = useCallback(() => {
+    const selectedId = state.selectedWeaponId
+    if (!selectedId) return
+    const selected = state.weaponInventory.find((w) => w.id === selectedId)
+    if (!selected) return
+
+    const currentPower = getWeaponPower(state.equippedWeapon)
+    const selectedPower = getWeaponPower(selected)
+
+    if (selectedPower <= currentPower) {
+      showDialog(
+        {
+          title: '确认替换',
+          message: '选中的武器不比当前装备更强，确定要替换吗？',
+          confirmText: '替换',
+          cancelText: '取消',
+        },
+        () => dispatch({ type: 'EQUIP_WEAPON', weaponId: selectedId }),
+      )
+      return
+    }
+
+    dispatch({ type: 'EQUIP_WEAPON', weaponId: selectedId })
+  }, [state.selectedWeaponId, state.weaponInventory, state.equippedWeapon, showDialog])
+
+  const value = useMemo(
+    () => ({
+      state,
+      totalDps,
+      mainHeroDps,
+      mainFireInterval,
+      equippedWeapon,
+      hasNewWeapons,
+      deployHero: deployHeroAction,
+      withdrawHero,
+      challengeBoss,
+      retreatBoss,
+      dismissBossFail,
+      clearToast,
+      clearHit,
+      clearGoldFlash,
+      toggleAutoBattle,
+      attackWithMainHero,
+      upgradeSkill,
+      upgradeHero,
+      upgradeWeapon,
+      tick,
+      setActiveTab,
+      openWeaponPicker,
+      closeSecondaryView,
+      closeHeroOverlay,
+      selectWeaponInPicker,
+      equipWeaponAction,
+      showToast,
+      tryEquipWeapon,
+      showDialog,
+      showAlert,
+      confirmDialog,
+      cancelDialog,
+      completeMonsterDeath,
+      completeMonsterSpawn,
+    }),
+    [
+      state,
+      totalDps,
+      mainHeroDps,
+      mainFireInterval,
+      equippedWeapon,
+      hasNewWeapons,
+      deployHeroAction,
+      withdrawHero,
+      challengeBoss,
+      retreatBoss,
+      dismissBossFail,
+      clearToast,
+      clearHit,
+      clearGoldFlash,
+      toggleAutoBattle,
+      attackWithMainHero,
+      upgradeSkill,
+      upgradeHero,
+      upgradeWeapon,
+      tick,
+      setActiveTab,
+      openWeaponPicker,
+      closeSecondaryView,
+      closeHeroOverlay,
+      selectWeaponInPicker,
+      equipWeaponAction,
+      showToast,
+      tryEquipWeapon,
+      showDialog,
+      showAlert,
+      confirmDialog,
+      cancelDialog,
+      completeMonsterDeath,
+      completeMonsterSpawn,
+    ],
+  )
+
+  return <GameContext.Provider value={value}>{children}</GameContext.Provider>
+}
+
+export function useGameStore() {
+  const ctx = useContext(GameContext)
+  if (!ctx) throw new Error('useGameStore must be used within GameProvider')
+  return ctx
+}
