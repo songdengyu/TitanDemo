@@ -5,7 +5,24 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #2b214e url('/assets/fantasy-pack/battle-background.svg') center / cover no-repeat;
+  background:
+    linear-gradient(180deg, transparent 0 51.5%, rgba(38, 76, 42, 0.12) 52%, #315b35 100%),
+    #2b214e url('/assets/fantasy-pack/battle-background.svg') center top / 100% 100% no-repeat;
+}
+
+.combatTap {
+  cursor: crosshair;
+  touch-action: manipulation;
+}
+
+.battleZone {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 52%;
+  min-height: 0;
+  flex-shrink: 0;
 }
 
 .skyTop {
@@ -201,11 +218,6 @@
   padding-bottom: 16px;
   position: relative;
   z-index: 1;
-}
-
-.arenaTap {
-  cursor: crosshair;
-  touch-action: manipulation;
 }
 
 .battlefield {

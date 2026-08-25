@@ -19,7 +19,7 @@ function GameApp() {
           <CombatView />
         </div>
         <div className="main-section">
-          <MainPanel />
+          {state.tabPanelOpen && <MainPanel />}
           <BottomTabBar />
         </div>
         <Toast />

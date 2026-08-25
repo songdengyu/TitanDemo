@@ -18,7 +18,7 @@ export function BottomTabBar() {
           <button
             key={tab.id}
             type="button"
-            className={`${styles.tab} ${state.activeTab === tab.id ? styles.active : ''}`}
+            className={`${styles.tab} ${state.tabPanelOpen && state.activeTab === tab.id ? styles.active : ''}`}
             onClick={() => setActiveTab(tab.id)}
           >
             <ArtIcon sheet="ui" name={tab.id} className={styles.tabIcon} />

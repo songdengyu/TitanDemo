@@ -221,7 +221,11 @@ export function CombatView() {
 
 
   return (
-    <div className={styles.combat} ref={combatRef}>
+    <div
+      className={`${styles.combat} ${!state.autoBattle && combatActive ? styles.combatTap : ''}`}
+      ref={combatRef}
+      onClick={handleArenaTap}
+    >
       <div className={styles.skyTop} />
       <div className={styles.skyGlow} />
       <div className={styles.mountains} />
@@ -229,30 +233,73 @@ export function CombatView() {
       <div className={styles.ground} />
       <div className={styles.groundTexture} />
 
-      <div className={styles.hud}>
-        <HealthBar
-          name={monster.name}
-          currentHp={monster.currentHp}
-          maxHp={monster.maxHp}
-          isBoss={isBoss}
-          bossTimer={bossTimer}
-        />
-        <div className={styles.statusRow}>
-          {isBoss || state.bossFailed ? (
-            <button
-              type="button"
-              className={styles.bossBtn}
-              onClick={isBoss ? retreatBoss : challengeBoss}
-            >
-              {isBoss ? '暂时撤退' : '挑战 Boss'}
-            </button>
-          ) : (
-            <span className={styles.progress}>{killCount}/10</span>
-          )}
-          <span className={styles.stage}>第 {state.stage} 关</span>
-          <span ref={goldRef} className={`${styles.gold} ${goldFlash ? styles.goldFlash : ''}`}>
-            <ArtIcon sheet="ui" name="coin" className={styles.coinIcon} /> {gold}
-          </span>
+      <div className={styles.battleZone}>
+        <div className={styles.hud}>
+          <HealthBar
+            name={monster.name}
+            currentHp={monster.currentHp}
+            maxHp={monster.maxHp}
+            isBoss={isBoss}
+            bossTimer={bossTimer}
+          />
+          <div className={styles.statusRow}>
+            {isBoss || state.bossFailed ? (
+              <button
+                type="button"
+                className={styles.bossBtn}
+                onClick={isBoss ? retreatBoss : challengeBoss}
+              >
+                {isBoss ? '暂时撤退' : '挑战 Boss'}
+              </button>
+            ) : (
+              <span className={styles.progress}>{killCount}/10</span>
+            )}
+            <span className={styles.stage}>第 {state.stage} 关</span>
+            <span ref={goldRef} className={`${styles.gold} ${goldFlash ? styles.goldFlash : ''}`}>
+              <ArtIcon sheet="ui" name="coin" className={styles.coinIcon} /> {gold}
+            </span>
+          </div>
+        </div>
+
+        <div className={styles.arena} ref={arenaRef}>
+          <CombatEffectsLayer
+            bullets={bullets}
+            popups={popups}
+            skillEffects={skillEffects}
+            onBulletEnd={removeBullet}
+            onPopupEnd={removePopup}
+            onSkillEffectEnd={removeSkillEffect}
+          />
+          <div className={styles.battlefield}>
+            <HeroPlatforms />
+            <div className={styles.monsterArea}>
+              <MonsterSprite
+                ref={monsterRef}
+                name={monster.name}
+                isBoss={isBoss}
+                hit={monsterHit}
+                phase={monsterPhase}
+                onDeathComplete={completeMonsterDeath}
+                onSpawnComplete={completeMonsterSpawn}
+              />
+              <div className={styles.heroRow} data-no-tap-attack>
+                <div ref={mainHeroRef} className={styles.heroWrap} data-combat-source="main">
+                  <CharacterAvatar role={mainHero.role} size="lg" />
+                  <span className={styles.heroDps}>{mainHeroDps} DPS</span>
+                </div>
+                <button
+                  type="button"
+                  className={`${styles.autoBattleBtn} ${state.autoBattle ? styles.autoBattleOn : ''}`}
+                  onClick={toggleAutoBattle}
+                  aria-pressed={state.autoBattle}
+                >
+                  <span className={styles.autoBattleDot} />
+                  <span>自动战斗</span>
+                  <strong>{state.autoBattle ? '开' : '关'}</strong>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -278,51 +325,6 @@ export function CombatView() {
             </span>
           )
         })}
-      </div>
-
-      <div
-        className={`${styles.arena} ${!state.autoBattle && combatActive ? styles.arenaTap : ''}`}
-        ref={arenaRef}
-        onClick={handleArenaTap}
-      >
-        <CombatEffectsLayer
-          bullets={bullets}
-          popups={popups}
-          skillEffects={skillEffects}
-          onBulletEnd={removeBullet}
-          onPopupEnd={removePopup}
-          onSkillEffectEnd={removeSkillEffect}
-        />
-        <div className={styles.battlefield}>
-          <HeroPlatforms />
-          <div className={styles.monsterArea}>
-            <MonsterSprite
-              ref={monsterRef}
-              name={monster.name}
-              isBoss={isBoss}
-              hit={monsterHit}
-              phase={monsterPhase}
-              onDeathComplete={completeMonsterDeath}
-              onSpawnComplete={completeMonsterSpawn}
-            />
-            <div className={styles.heroRow} data-no-tap-attack>
-              <div ref={mainHeroRef} className={styles.heroWrap} data-combat-source="main">
-                <CharacterAvatar role={mainHero.role} size="lg" />
-                <span className={styles.heroDps}>{mainHeroDps} DPS</span>
-              </div>
-              <button
-                type="button"
-                className={`${styles.autoBattleBtn} ${state.autoBattle ? styles.autoBattleOn : ''}`}
-                onClick={toggleAutoBattle}
-                aria-pressed={state.autoBattle}
-              >
-                <span className={styles.autoBattleDot} />
-                <span>自动战斗</span>
-                <strong>{state.autoBattle ? '开' : '关'}</strong>
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   )

@@ -1,4 +1,9 @@
 .bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
   display: flex;
   align-items: stretch;
   background: linear-gradient(180deg, #1a0f2e 0%, #120a1e 100%);

@@ -80,6 +80,7 @@ export interface GameState {
   monsterHitCooldown: number
   autoBattle: boolean
   activeTab: ActiveTab
+  tabPanelOpen: boolean
   secondaryView: SecondaryView
   showHeroOverlay: boolean
   equippedWeaponId: string
@@ -112,6 +113,7 @@ type GameAction =
   | { type: 'UPGRADE_HERO'; heroId: string }
   | { type: 'UPGRADE_WEAPON'; weaponId: string }
   | { type: 'SET_ACTIVE_TAB'; tab: ActiveTab }
+  | { type: 'CLOSE_TAB_PANEL' }
   | { type: 'OPEN_WEAPON_PICKER' }
   | { type: 'CLOSE_SECONDARY_VIEW' }
   | { type: 'OPEN_HERO_OVERLAY' }
@@ -150,6 +152,7 @@ const initialState: GameState = {
   monsterHitCooldown: 0,
   autoBattle: false,
   activeTab: 'equipment',
+  tabPanelOpen: true,
   secondaryView: null,
   showHeroOverlay: false,
   equippedWeaponId: INITIAL_EQUIPPED_WEAPON_ID,
@@ -544,8 +547,17 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         activeTab: action.tab,
+        tabPanelOpen: true,
         secondaryView: null,
         showHeroOverlay: action.tab === 'heroes',
+      }
+
+    case 'CLOSE_TAB_PANEL':
+      return {
+        ...state,
+        tabPanelOpen: false,
+        secondaryView: null,
+        showHeroOverlay: false,
       }
 
     case 'OPEN_WEAPON_PICKER':
@@ -611,6 +623,7 @@ interface GameContextValue {
   upgradeWeapon: (weaponId: string) => void
   tick: (deltaSeconds: number) => void
   setActiveTab: (tab: ActiveTab) => void
+  closeTabPanel: () => void
   openWeaponPicker: () => void
   closeSecondaryView: () => void
   closeHeroOverlay: () => void
@@ -668,6 +681,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const completeMonsterSpawn = useCallback(() => dispatch({ type: 'MONSTER_SPAWN_COMPLETE' }), [])
   const tick = useCallback((deltaSeconds: number) => dispatch({ type: 'TICK', deltaSeconds }), [])
   const setActiveTab = useCallback((tab: ActiveTab) => dispatch({ type: 'SET_ACTIVE_TAB', tab }), [])
+  const closeTabPanel = useCallback(() => dispatch({ type: 'CLOSE_TAB_PANEL' }), [])
   const openWeaponPicker = useCallback(() => dispatch({ type: 'OPEN_WEAPON_PICKER' }), [])
   const closeSecondaryView = useCallback(() => dispatch({ type: 'CLOSE_SECONDARY_VIEW' }), [])
   const closeHeroOverlay = useCallback(() => dispatch({ type: 'CLOSE_HERO_OVERLAY' }), [])
@@ -759,6 +773,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       upgradeWeapon,
       tick,
       setActiveTab,
+      closeTabPanel,
       openWeaponPicker,
       closeSecondaryView,
       closeHeroOverlay,
@@ -795,6 +810,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       upgradeWeapon,
       tick,
       setActiveTab,
+      closeTabPanel,
       openWeaponPicker,
       closeSecondaryView,
       closeHeroOverlay,
