@@ -9,7 +9,7 @@ const TABS = [
 ]
 
 export function BottomTabBar() {
-  const { state, setActiveTab, showAlert } = useGameStore()
+  const { state, setActiveTab, openMergeView } = useGameStore()
 
   return (
     <div className={styles.bar}>
@@ -29,7 +29,7 @@ export function BottomTabBar() {
       <button
         type="button"
         className={styles.craftBtn}
-        onClick={() => showAlert('合成', '合成系统暂未开放，敬请期待。')}
+        onClick={openMergeView}
         aria-label="合成"
       >
         <ArtIcon sheet="ui" name="craft" className={styles.craftIcon} />

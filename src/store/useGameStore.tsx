@@ -34,7 +34,7 @@ import {
 } from '../data/weapons'
 
 export type ActiveTab = 'equipment' | 'skills' | 'heroes'
-export type SecondaryView = null | 'weapon'
+export type SecondaryView = null | 'weapon' | 'merge'
 
 export interface MonsterState {
   name: string
@@ -115,6 +115,7 @@ type GameAction =
   | { type: 'SET_ACTIVE_TAB'; tab: ActiveTab }
   | { type: 'CLOSE_TAB_PANEL' }
   | { type: 'OPEN_WEAPON_PICKER' }
+  | { type: 'OPEN_MERGE_VIEW' }
   | { type: 'CLOSE_SECONDARY_VIEW' }
   | { type: 'OPEN_HERO_OVERLAY' }
   | { type: 'CLOSE_HERO_OVERLAY' }
@@ -563,6 +564,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case 'OPEN_WEAPON_PICKER':
       return { ...state, secondaryView: 'weapon', selectedWeaponId: null }
 
+    case 'OPEN_MERGE_VIEW':
+      return {
+        ...state,
+        secondaryView: 'merge',
+        selectedWeaponId: null,
+        showHeroOverlay: false,
+        dialog: null,
+      }
+
     case 'CLOSE_SECONDARY_VIEW':
       return {
         ...state,
@@ -625,6 +635,7 @@ interface GameContextValue {
   setActiveTab: (tab: ActiveTab) => void
   closeTabPanel: () => void
   openWeaponPicker: () => void
+  openMergeView: () => void
   closeSecondaryView: () => void
   closeHeroOverlay: () => void
   selectWeaponInPicker: (weaponId: string) => void
@@ -683,6 +694,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const setActiveTab = useCallback((tab: ActiveTab) => dispatch({ type: 'SET_ACTIVE_TAB', tab }), [])
   const closeTabPanel = useCallback(() => dispatch({ type: 'CLOSE_TAB_PANEL' }), [])
   const openWeaponPicker = useCallback(() => dispatch({ type: 'OPEN_WEAPON_PICKER' }), [])
+  const openMergeView = useCallback(() => dispatch({ type: 'OPEN_MERGE_VIEW' }), [])
   const closeSecondaryView = useCallback(() => dispatch({ type: 'CLOSE_SECONDARY_VIEW' }), [])
   const closeHeroOverlay = useCallback(() => dispatch({ type: 'CLOSE_HERO_OVERLAY' }), [])
   const selectWeaponInPicker = useCallback(
@@ -775,6 +787,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       setActiveTab,
       closeTabPanel,
       openWeaponPicker,
+      openMergeView,
       closeSecondaryView,
       closeHeroOverlay,
       selectWeaponInPicker,
@@ -812,6 +825,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       setActiveTab,
       closeTabPanel,
       openWeaponPicker,
+      openMergeView,
       closeSecondaryView,
       closeHeroOverlay,
       selectWeaponInPicker,
