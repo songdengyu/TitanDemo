@@ -13,7 +13,7 @@ export function HealthBar({ name, currentHp, maxHp, isBoss, bossTimer }: HealthB
 
   return (
     <div className={styles.wrapper}>
-      {isBoss && (
+      {isBoss && bossTimer !== undefined && (
         <div className={styles.bossTimer}>
           <span className={styles.timerIcon}>⏱</span>
           {Math.ceil(bossTimer ?? 0)}s

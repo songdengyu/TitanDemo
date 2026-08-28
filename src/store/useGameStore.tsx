@@ -23,7 +23,8 @@ import {
 } from '../utils/platformLayout'
 import { INITIAL_MAIN_HERO, type MainHero } from '../data/mainHero'
 import { calculateExpectedDamage, rollDamage, sumEquipmentStats } from '../data/combatStats'
-import { calcGoldReward, createMonster } from '../data/monsters'
+import { createMonster } from '../data/monsters'
+import { loadMonsterConfig, type MonsterConfig } from '../data/monsterConfig'
 import { COMBAT_RESUME_GRACE_SEC } from '../data/combat'
 import {
   INITIAL_SKILL_LEVELS,
@@ -45,9 +46,13 @@ export type ActiveTab = 'equipment' | 'skills' | 'heroes'
 export type SecondaryView = null | 'weapon' | 'equipment' | 'merge'
 
 export interface MonsterState {
+  id: number
   name: string
   maxHp: number
   currentHp: number
+  goldReward: number
+  hasTimeLimit: boolean
+  timeLimit: number | null
 }
 
 export type MonsterPhase = 'fighting' | 'dying' | 'spawning'
@@ -78,6 +83,8 @@ export interface GameState {
   diamonds: number
   equipmentCatalog: EquipmentConfig[]
   equipmentConfigError: string | null
+  monsterCatalog: MonsterConfig[]
+  monsterConfigError: string | null
   ownedEquipment: Record<number, number>
   equippedEquipment: Record<number, number | null>
   newEquipmentIds: number[]
@@ -145,6 +152,8 @@ type GameAction =
   | { type: 'HIDE_DIALOG' }
   | { type: 'LOAD_EQUIPMENT'; equipment: EquipmentConfig[] }
   | { type: 'EQUIPMENT_CONFIG_ERROR'; message: string }
+  | { type: 'LOAD_MONSTERS'; monsters: MonsterConfig[] }
+  | { type: 'MONSTER_CONFIG_ERROR'; message: string }
   | { type: 'SYNC_MERGE_RESOURCES'; gold: number; diamonds: number }
   | { type: 'GRANT_EQUIPMENT'; item: EquipmentConfig; quantity: number }
   | { type: 'BUY_EQUIPMENT'; item: EquipmentConfig }
@@ -168,6 +177,8 @@ const initialState: GameState = {
   diamonds: 500,
   equipmentCatalog: [],
   equipmentConfigError: null,
+  monsterCatalog: [],
+  monsterConfigError: null,
   ownedEquipment: { 100010001: 1, 100020001: 1 },
   equippedEquipment: { 1: 100010001, 2: null, 3: null, 4: null, 5: null, 6: null, 7: null },
   newEquipmentIds: [],
@@ -194,6 +205,37 @@ const initialState: GameState = {
   equipmentPickerType: null,
   selectedEquipmentId: null,
   dialog: null,
+}
+
+function remapMonsterHp(current: MonsterState, configured: MonsterState): MonsterState {
+  if (current.currentHp <= 0) return { ...configured, currentHp: 0 }
+  const ratio = current.maxHp > 0 ? current.currentHp / current.maxHp : 1
+  return {
+    ...configured,
+    currentHp: Math.min(configured.maxHp, Math.max(1, Math.round(configured.maxHp * ratio))),
+  }
+}
+
+function applyMonsterCatalog(state: GameState, catalog: MonsterConfig[]): GameState {
+  const pending = state.pendingTransition
+  return {
+    ...state,
+    monsterCatalog: catalog,
+    monsterConfigError: null,
+    monster: remapMonsterHp(
+      state.monster,
+      createMonster(state.stage, state.killCount, state.isBoss, catalog),
+    ),
+    pendingTransition: pending
+      ? {
+        ...pending,
+        monster: remapMonsterHp(
+          pending.monster,
+          createMonster(pending.stage, pending.killCount, pending.isBoss, catalog),
+        ),
+      }
+      : null,
+  }
 }
 
 function getEquippedCombatItems(state: GameState): EquipmentConfig[] {
@@ -237,7 +279,7 @@ function applyDamage(state: GameState, damage: number): GameState {
 }
 
 function computeNextAfterKill(state: GameState): PendingMonsterTransition & { gold: number } {
-  const goldGain = calcGoldReward(state.stage, state.isBoss)
+  const goldGain = state.monster.goldReward
   const gold = state.gold + goldGain
 
   if (state.isBoss) {
@@ -248,23 +290,24 @@ function computeNextAfterKill(state: GameState): PendingMonsterTransition & { go
       isBoss: false,
       bossFailed: false,
       bossTimer: 30,
-      monster: createMonster(state.stage + 1, 0, false),
+      monster: createMonster(state.stage + 1, 0, false, state.monsterCatalog),
       toast: `击败 Boss！进入第 ${state.stage + 1} 关`,
     }
   }
 
   const newKillCount = state.killCount + 1
 
-  if (newKillCount >= 10) {
+  if (newKillCount >= 9) {
+    const boss = createMonster(state.stage, 9, true, state.monsterCatalog)
     return {
       gold,
       stage: state.stage,
-      killCount: 10,
+      killCount: 9,
       isBoss: true,
       bossFailed: false,
-      bossTimer: 30,
-      monster: createMonster(state.stage, 9, true),
-      toast: 'Boss 出现！30 秒内击败它',
+      bossTimer: boss.timeLimit ?? 30,
+      monster: boss,
+      toast: boss.hasTimeLimit ? `Boss 出现！${boss.timeLimit ?? 30} 秒内击败它` : 'Boss 出现！',
     }
   }
 
@@ -275,7 +318,7 @@ function computeNextAfterKill(state: GameState): PendingMonsterTransition & { go
     isBoss: false,
     bossFailed: false,
     bossTimer: state.bossTimer,
-    monster: createMonster(state.stage, newKillCount, false),
+    monster: createMonster(state.stage, newKillCount, false, state.monsterCatalog),
     toast: null,
   }
 }
@@ -304,7 +347,7 @@ function handleBossTimeout(state: GameState): GameState {
     bossFailed: false,
     bossTimer: 30,
     showBossFailModal: true,
-    monster: createMonster(state.stage, 0, false),
+    monster: createMonster(state.stage, 0, false, state.monsterCatalog),
     monsterPhase: 'spawning',
     pendingTransition: null,
   }
@@ -465,7 +508,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         isBoss: true,
         bossFailed: false,
         bossTimer: 30,
-        monster: createMonster(state.stage, 9, true),
+        monster: createMonster(state.stage, 9, true, state.monsterCatalog),
         monsterPhase: 'spawning',
         pendingTransition: null,
         toast: 'Boss 挑战开始！',
@@ -479,7 +522,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         killCount: 0,
         bossFailed: true,
         bossTimer: 30,
-        monster: createMonster(state.stage, 0, false),
+        monster: createMonster(state.stage, 0, false, state.monsterCatalog),
         monsterPhase: 'spawning',
         pendingTransition: null,
         toast: '已暂时撤退，可刷普通怪物或随时重返 Boss',
@@ -651,6 +694,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case 'EQUIPMENT_CONFIG_ERROR':
       return { ...state, equipmentConfigError: action.message }
 
+    case 'LOAD_MONSTERS':
+      return applyMonsterCatalog(state, action.monsters)
+
+    case 'MONSTER_CONFIG_ERROR':
+      return { ...state, monsterConfigError: action.message }
+
     case 'SYNC_MERGE_RESOURCES':
       return { ...state, gold: action.gold, diamonds: action.diamonds }
 
@@ -812,6 +861,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
       .catch((error: unknown) => active && dispatch({
         type: 'EQUIPMENT_CONFIG_ERROR',
         message: error instanceof Error ? error.message : '装备配置加载失败',
+      }))
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    loadMonsterConfig()
+      .then((monsters) => active && dispatch({ type: 'LOAD_MONSTERS', monsters }))
+      .catch((error: unknown) => active && dispatch({
+        type: 'MONSTER_CONFIG_ERROR',
+        message: error instanceof Error ? error.message : '怪物配置加载失败',
       }))
     return () => { active = false }
   }, [])

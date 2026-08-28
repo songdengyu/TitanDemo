@@ -1,3 +1,5 @@
+import type { MonsterConfig } from './monsterConfig'
+
 const MONSTER_NAMES = [
   '史莱姆',
   '哥布林',
@@ -20,9 +22,17 @@ const BOSS_NAMES = [
 ]
 
 export interface Monster {
+  id: number
   name: string
   maxHp: number
   currentHp: number
+  goldReward: number
+  hasTimeLimit: boolean
+  timeLimit: number | null
+}
+
+export function getMonsterId(stage: number, killCount: number, isBoss: boolean): number {
+  return (stage - 1) * 10 + (isBoss ? 10 : killCount + 1)
 }
 
 export function getMonsterName(stage: number, killCount: number, isBoss: boolean): string {
@@ -40,17 +50,25 @@ export function calcBossHp(stage: number): number {
   return calcNormalMonsterHp(stage, 9) * 10
 }
 
-export function createMonster(stage: number, killCount: number, isBoss: boolean): Monster {
-  const maxHp = isBoss ? calcBossHp(stage) : calcNormalMonsterHp(stage, killCount)
+export function createMonster(
+  stage: number,
+  killCount: number,
+  isBoss: boolean,
+  catalog: MonsterConfig[] = [],
+): Monster {
+  const id = getMonsterId(stage, killCount, isBoss)
+  const config = catalog.find((item) => item.id === id)
+  const resolvedBoss = id % 10 === 0
+  const maxHp = config?.hp ?? (resolvedBoss ? calcBossHp(stage) : calcNormalMonsterHp(stage, killCount))
   return {
-    name: getMonsterName(stage, killCount, isBoss),
+    id,
+    name: getMonsterName(stage, killCount, resolvedBoss),
     maxHp,
     currentHp: maxHp,
+    goldReward: config?.goldReward ?? calcGoldReward(stage, resolvedBoss),
+    hasTimeLimit: config?.hasTimeLimit ?? resolvedBoss,
+    timeLimit: config?.timeLimit ?? (resolvedBoss ? 30 : null),
   }
-}
-
-export function createRandomNormalMonster(stage: number): Monster {
-  return createMonster(stage, Math.floor(Math.random() * MONSTER_NAMES.length), false)
 }
 
 export function calcGoldReward(stage: number, isBoss: boolean): number {

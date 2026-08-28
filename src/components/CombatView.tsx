@@ -240,7 +240,7 @@ export function CombatView() {
             currentHp={monster.currentHp}
             maxHp={monster.maxHp}
             isBoss={isBoss}
-            bossTimer={bossTimer}
+            bossTimer={monster.hasTimeLimit ? bossTimer : undefined}
           />
           <div className={styles.statusRow}>
             {isBoss || state.bossFailed ? (
@@ -252,7 +252,7 @@ export function CombatView() {
                 {isBoss ? '暂时撤退' : '挑战 Boss'}
               </button>
             ) : (
-              <span className={styles.progress}>{killCount}/10</span>
+              <span className={styles.progress}>{killCount}/9</span>
             )}
             <span className={styles.stage}>第 {state.stage} 关</span>
             <span ref={goldRef} className={`${styles.gold} ${goldFlash ? styles.goldFlash : ''}`}>
