@@ -77,6 +77,10 @@ export function getHeroUpgradeCost(hero: Hero): number {
   return hero.level === 0 ? hero.unlockCost : Math.ceil(hero.unlockCost * 0.45 + hero.level * hero.level * 18)
 }
 
+export function getHeroSkillBookCost(level: number): number {
+  return Math.max(10, level * 10)
+}
+
 export function getHeroBulletProfile(heroId: string): HeroBulletProfile {
   return heroBulletMap.get(heroId) ?? { color: '#ffffff', width: 10, height: 10, shape: 'round' }
 }

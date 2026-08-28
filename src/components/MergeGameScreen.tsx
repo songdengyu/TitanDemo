@@ -139,10 +139,13 @@ function MergeGame({ config }: { config: MergeConfig }) {
   function finishOrder(slot: number) {
     const orderState = state.activeOrders[slot]
     const order = orderState ? config.orders[orderState.configIndex] : null
+    const rewardItem = order ? config.equipment.get(order.equipmentId) : null
     dispatch({
       type: 'COMPLETE_ORDER',
       slot,
-      alreadyOwned: order ? (gameState.ownedEquipment[order.equipmentId] ?? 0) > 0 : false,
+      alreadyOwned: order
+        ? rewardItem?.type !== 8 && (gameState.ownedEquipment[order.equipmentId] ?? 0) > 0
+        : false,
     })
   }
 
@@ -257,7 +260,7 @@ function MergeGame({ config }: { config: MergeConfig }) {
           const order = config.orders[orderState.configIndex]
           const ready = canCompleteOrder(state, order)
           const equipment = config.equipment.get(order.equipmentId)
-          const alreadyOwned = (gameState.ownedEquipment[order.equipmentId] ?? 0) > 0
+          const alreadyOwned = equipment?.type !== 8 && (gameState.ownedEquipment[order.equipmentId] ?? 0) > 0
           const convertGold = alreadyOwned && equipment
             ? getEquipmentDismantleGold(equipment) * order.quantity
             : 0

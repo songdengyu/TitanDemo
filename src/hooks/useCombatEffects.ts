@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { pickMainSlashAngle } from '../data/combat'
 import { getHeroBulletProfile, type HeroBulletShape } from '../data/heroes'
 import type { BulletStyle } from '../data/weapons'
-import type { SkillEffectShape } from '../data/skills'
+import type { SkillEffectShape } from '../data/skillConfig'
 
 export interface Bullet {
   id: number

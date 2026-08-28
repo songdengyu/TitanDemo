@@ -9,7 +9,7 @@ const TABS = [
 ]
 
 export function BottomTabBar() {
-  const { state, setActiveTab, openMergeView } = useGameStore()
+  const { state, hasUpgradeableSkill, setActiveTab, openMergeView } = useGameStore()
 
   return (
     <div className={styles.bar}>
@@ -21,6 +21,7 @@ export function BottomTabBar() {
             className={`${styles.tab} ${state.tabPanelOpen && state.activeTab === tab.id ? styles.active : ''}`}
             onClick={() => setActiveTab(tab.id)}
           >
+            {tab.id === 'skills' && hasUpgradeableSkill && <i className={styles.redDot} />}
             <ArtIcon sheet="ui" name={tab.id} className={styles.tabIcon} />
             <span className={styles.tabLabel}>{tab.label}</span>
           </button>

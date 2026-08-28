@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { QUALITY_COLORS } from '../data/weapons'
 import { getHeroAttackInterval, HERO_ATTACK_INTERVAL_SCALE } from '../data/heroes'
 import { getDeployedHeroIds } from '../utils/platformLayout'
-import { SKILLS, getSkillDamageMultiplier } from '../data/skills'
+import { MAIN_HERO_SKILL_OWNER_ID, type SkillConfig } from '../data/skillConfig'
 import { useCombatEffects } from '../hooks/useCombatEffects'
 import { useGameStore } from '../store/useGameStore'
 import { CombatEffectsLayer } from './CombatEffectsLayer'
@@ -12,8 +12,6 @@ import { HeroPlatforms } from './HeroPlatforms'
 import { MonsterSprite } from './MonsterSprite'
 import { ArtIcon } from './ArtIcon'
 import styles from './CombatView.module.css'
-
-const AUTO_DAMAGE_INTERVAL = 500
 
 interface CoinDrop {
   id: number
@@ -27,7 +25,6 @@ interface CoinDrop {
 export function CombatView() {
   const {
     state,
-    totalDps,
     mainHeroDps,
     equippedWeapon,
     mainFireInterval,
@@ -35,6 +32,8 @@ export function CombatView() {
     completeMonsterSpawn,
     toggleAutoBattle,
     attackWithMainHero,
+    attackWithHero,
+    addTestResource,
     challengeBoss,
     retreatBoss,
   } = useGameStore()
@@ -64,7 +63,7 @@ export function CombatView() {
   const arenaRef = useRef<HTMLDivElement>(null)
   const monsterRef = useRef<HTMLDivElement>(null)
   const mainHeroRef = useRef<HTMLDivElement>(null)
-  const goldRef = useRef<HTMLSpanElement>(null)
+  const goldRef = useRef<HTMLButtonElement>(null)
   const [coinDrops, setCoinDrops] = useState<CoinDrop[]>([])
 
   const {
@@ -146,35 +145,69 @@ export function CombatView() {
     [combatActive, showDamage],
   )
 
-  const castRandomSkill = useCallback(() => {
+  const fireHeroAttack = useCallback((heroId: string) => {
     if (!combatActive) return
-    const availableSkills = SKILLS.filter((skill) => (state.skillLevels[skill.id] ?? 0) > 0)
-    const skill = availableSkills[Math.floor(Math.random() * availableSkills.length)] ?? SKILLS[0]
-    const level = state.skillLevels[skill.id] ?? 1
-    const multiplier = getSkillDamageMultiplier(skill, level)
+    shootFrom(heroId)
+    const result = attackWithHero(heroId)
+    showDamageOnMonster(result.damage, false)
+  }, [attackWithHero, combatActive, shootFrom, showDamageOnMonster])
+  const fireHeroAttackRef = useRef(fireHeroAttack)
+  useEffect(() => {
+    fireHeroAttackRef.current = fireHeroAttack
+  }, [fireHeroAttack])
+
+  const mainSkills = useMemo(
+    () => state.skillCatalog.filter((skill) => skill.ownerId === MAIN_HERO_SKILL_OWNER_ID),
+    [state.skillCatalog],
+  )
+  const basicSkill = useMemo(() => mainSkills.find((skill) => skill.type === 1), [mainSkills])
+  const activeSkills = useMemo(
+    () => mainSkills.filter(
+      (skill) => skill.type === 2 && (state.skillLevels[skill.id] ?? 0) > 0 && skill.cooldownSeconds > 0,
+    ),
+    [mainSkills, state.skillLevels],
+  )
+
+  const castSkill = useCallback((skill: SkillConfig) => {
+    if (!combatActive) return
+    if ((state.skillLevels[skill.id] ?? 0) <= 0) return
     const arena = arenaRef.current
     const monsterEl = monsterRef.current
     if (!arena || !monsterEl) return
 
-    showSkillEffect(arena, monsterEl, skill)
-    const result = attackWithMainHero(multiplier, true)
+    if (skill.type === 1) shootFrom('main')
+    else showSkillEffect(arena, monsterEl, skill)
+    const result = attackWithMainHero(skill.id)
     showDamageOnMonster(result.damage, true)
-  }, [attackWithMainHero, combatActive, showDamageOnMonster, showSkillEffect, state.skillLevels])
+  }, [attackWithMainHero, combatActive, shootFrom, showDamageOnMonster, showSkillEffect, state.skillLevels])
+  const castSkillRef = useRef(castSkill)
+  useEffect(() => {
+    castSkillRef.current = castSkill
+  }, [castSkill])
 
   useEffect(() => {
-    if (!combatActive || !state.autoBattle) return
-    const interval = setInterval(castRandomSkill, mainFireInterval)
+    if (!combatActive || !state.autoBattle || !basicSkill || (state.skillLevels[basicSkill.id] ?? 0) <= 0) return
+    const interval = setInterval(() => castSkillRef.current(basicSkill), mainFireInterval)
     return () => clearInterval(interval)
-  }, [castRandomSkill, mainFireInterval, combatActive, state.autoBattle])
+  }, [basicSkill, mainFireInterval, combatActive, state.autoBattle, state.skillLevels])
+
+  useEffect(() => {
+    if (!state.autoBattle) return
+    const intervals = activeSkills.map((skill) => setInterval(
+      () => castSkillRef.current(skill),
+      skill.cooldownSeconds * 1000,
+    ))
+    return () => intervals.forEach(clearInterval)
+  }, [activeSkills, state.autoBattle])
 
   const wasCombatActiveRef = useRef(combatActive)
   useEffect(() => {
     if (combatActive && !wasCombatActiveRef.current) {
-      if (state.autoBattle) castRandomSkill()
-      getDeployedHeroIds(deployedSlots).forEach((id) => shootFrom(id))
+      if (state.autoBattle && basicSkill) castSkill(basicSkill)
+      getDeployedHeroIds(deployedSlots).forEach((id) => fireHeroAttackRef.current(id))
     }
     wasCombatActiveRef.current = combatActive
-  }, [castRandomSkill, combatActive, deployedSlots, shootFrom, state.autoBattle])
+  }, [basicSkill, castSkill, combatActive, deployedSlots, state.autoBattle])
 
   useEffect(() => {
     if (!combatActive || !deployedSlots.some(Boolean)) return
@@ -184,30 +217,16 @@ export function CombatView() {
       const ms = hero
         ? hero.attackInterval * HERO_ATTACK_INTERVAL_SCALE
         : getHeroAttackInterval(heroId)
-      return setInterval(() => shootFrom(heroId), ms)
+      return setInterval(() => fireHeroAttackRef.current(heroId), ms)
     })
 
     return () => intervals.forEach(clearInterval)
-  }, [deployedSlots, shootFrom, combatActive, heroes])
-
-  useEffect(() => {
-    if (!combatActive || totalDps <= 0) return
-
-    const interval = setInterval(() => {
-      const seconds = AUTO_DAMAGE_INTERVAL / 1000
-      const heroDps = totalDps - mainHeroDps
-      if (heroDps > 0) {
-        showDamageOnMonster(heroDps * seconds, false)
-      }
-    }, AUTO_DAMAGE_INTERVAL)
-
-    return () => clearInterval(interval)
-  }, [totalDps, mainHeroDps, showDamageOnMonster, combatActive, state.autoBattle])
+  }, [deployedSlots, combatActive, heroes])
 
   const handleManualAttack = useCallback(() => {
-    if (!combatActive || state.autoBattle) return
-    castRandomSkill()
-  }, [castRandomSkill, combatActive, state.autoBattle])
+    if (!combatActive || state.autoBattle || !basicSkill) return
+    castSkill(basicSkill)
+  }, [basicSkill, castSkill, combatActive, state.autoBattle])
 
   const handleArenaTap = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -257,10 +276,23 @@ export function CombatView() {
             )}
             <span className={styles.stage}>第 {state.stage} 关</span>
             <span className={styles.currencies}>
-              <span ref={goldRef} className={`${styles.gold} ${goldFlash ? styles.goldFlash : ''}`}>
+              <button
+                ref={goldRef}
+                type="button"
+                className={`${styles.gold} ${goldFlash ? styles.goldFlash : ''}`}
+                title="测试：点击增加 1000 金币"
+                onClick={() => addTestResource('gold')}
+              >
                 <ArtIcon sheet="ui" name="coin" className={styles.coinIcon} /> {gold}
-              </span>
-              <span className={styles.diamonds}>◆ {diamonds}</span>
+              </button>
+              <button
+                type="button"
+                className={styles.diamonds}
+                title="测试：点击增加 1000 钻石"
+                onClick={() => addTestResource('diamonds')}
+              >
+                ◆ {diamonds}
+              </button>
             </span>
           </div>
         </div>

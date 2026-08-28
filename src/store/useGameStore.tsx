@@ -14,7 +14,7 @@ import {
   loadEquipmentConfig,
   type EquipmentConfig,
 } from '../data/equipmentConfig'
-import { INITIAL_HEROES, getHeroDps, getHeroUpgradeCost, type Hero } from '../data/heroes'
+import { HERO_ATTACK_INTERVAL_SCALE, INITIAL_HEROES, getHeroSkillBookCost, type Hero } from '../data/heroes'
 import {
   createEmptyDeployedSlots,
   findFirstEmptySlot,
@@ -22,20 +22,20 @@ import {
   isHeroDeployed,
 } from '../utils/platformLayout'
 import { INITIAL_MAIN_HERO, type MainHero } from '../data/mainHero'
-import { calculateExpectedDamage, rollDamage, sumEquipmentStats } from '../data/combatStats'
+import { applyPassiveSkills, calculateExpectedDamage, rollDamage, sumEquipmentStats, type CombatStats } from '../data/combatStats'
 import { createMonster } from '../data/monsters'
 import { loadMonsterConfig, type MonsterConfig } from '../data/monsterConfig'
 import { COMBAT_RESUME_GRACE_SEC } from '../data/combat'
 import {
-  INITIAL_SKILL_LEVELS,
-  getSkillById,
-  getSkillUpgradeCost,
-} from '../data/skills'
+  MAIN_HERO_SKILL_OWNER_ID,
+  getSkillValue,
+  loadSkillConfig,
+  type SkillConfig,
+} from '../data/skillConfig'
 import {
   EQUIPPED_WEAPON_DEFAULT,
   INITIAL_EQUIPPED_WEAPON_ID,
   INITIAL_WEAPON_INVENTORY,
-  getMainFireInterval,
   getWeaponUpgradeCost,
   getWeaponPower,
   WEAPON_CATALOG,
@@ -85,6 +85,8 @@ export interface GameState {
   equipmentConfigError: string | null
   monsterCatalog: MonsterConfig[]
   monsterConfigError: string | null
+  skillCatalog: SkillConfig[]
+  skillConfigError: string | null
   ownedEquipment: Record<number, number>
   equippedEquipment: Record<number, number | null>
   newEquipmentIds: number[]
@@ -96,7 +98,7 @@ export interface GameState {
   goldFlash: boolean
   goldDropId: number
   goldDropAmount: number
-  skillLevels: Record<string, number>
+  skillLevels: Record<number, number>
   monsterHit: boolean
   monsterHitCooldown: number
   autoBattle: boolean
@@ -132,9 +134,11 @@ type GameAction =
   | { type: 'CLEAR_GOLD_FLASH' }
   | { type: 'TOGGLE_AUTO_BATTLE' }
   | { type: 'MAIN_HERO_ATTACK'; damage: number }
-  | { type: 'UPGRADE_SKILL'; skillId: string }
+  | { type: 'UPGRADE_SKILL'; skillId: number }
   | { type: 'UPGRADE_HERO'; heroId: string }
   | { type: 'UPGRADE_WEAPON'; weaponId: string }
+  | { type: 'EXCHANGE_SKILL_BOOKS'; diamondCost: number; quantity: number }
+  | { type: 'ADD_TEST_RESOURCE'; resource: 'gold' | 'diamonds' | 'skillBooks' }
   | { type: 'SET_ACTIVE_TAB'; tab: ActiveTab }
   | { type: 'CLOSE_TAB_PANEL' }
   | { type: 'OPEN_WEAPON_PICKER' }
@@ -154,6 +158,8 @@ type GameAction =
   | { type: 'EQUIPMENT_CONFIG_ERROR'; message: string }
   | { type: 'LOAD_MONSTERS'; monsters: MonsterConfig[] }
   | { type: 'MONSTER_CONFIG_ERROR'; message: string }
+  | { type: 'LOAD_SKILLS'; skills: SkillConfig[] }
+  | { type: 'SKILL_CONFIG_ERROR'; message: string }
   | { type: 'SYNC_MERGE_RESOURCES'; gold: number; diamonds: number }
   | { type: 'GRANT_EQUIPMENT'; item: EquipmentConfig; quantity: number }
   | { type: 'BUY_EQUIPMENT'; item: EquipmentConfig }
@@ -179,6 +185,8 @@ const initialState: GameState = {
   equipmentConfigError: null,
   monsterCatalog: [],
   monsterConfigError: null,
+  skillCatalog: [],
+  skillConfigError: null,
   ownedEquipment: { 100010001: 1, 100020001: 1 },
   equippedEquipment: { 1: 100010001, 2: null, 3: null, 4: null, 5: null, 6: null, 7: null },
   newEquipmentIds: [],
@@ -190,7 +198,7 @@ const initialState: GameState = {
   goldFlash: false,
   goldDropId: 0,
   goldDropAmount: 0,
-  skillLevels: INITIAL_SKILL_LEVELS,
+  skillLevels: {},
   monsterHit: false,
   monsterHitCooldown: 0,
   autoBattle: false,
@@ -244,21 +252,80 @@ function getEquippedCombatItems(state: GameState): EquipmentConfig[] {
     .filter((item): item is EquipmentConfig => item !== undefined)
 }
 
+function getMainHeroStats(state: GameState): CombatStats {
+  const passives = state.skillCatalog
+    .filter((skill) => skill.ownerId === MAIN_HERO_SKILL_OWNER_ID && skill.type === 3)
+    .map((skill) => ({ skill, level: state.skillLevels[skill.id] ?? 0 }))
+  return applyPassiveSkills(sumEquipmentStats(getEquippedCombatItems(state)), passives)
+}
+
+function getHeroStats(state: GameState, heroIndex: number): CombatStats {
+  const item = state.equipmentCatalog.find((entry) => entry.id === 100030001 + heroIndex)
+  const hero = state.heroes[heroIndex]
+  if (!item || !hero) return sumEquipmentStats([])
+  const passives = state.skillCatalog
+    .filter((skill) => skill.ownerId === item.id && skill.type === 3 && skill.unlockLevel <= hero.level)
+    .map((skill) => ({ skill, level: 1 }))
+  return applyPassiveSkills(sumEquipmentStats([item]), passives)
+}
+
 function getMainHeroExpectedDamage(state: GameState): number {
-  return calculateExpectedDamage(sumEquipmentStats(getEquippedCombatItems(state)))
+  const stats = getMainHeroStats(state)
+  return state.skillCatalog
+    .filter((skill) => skill.ownerId === MAIN_HERO_SKILL_OWNER_ID && skill.type !== 3)
+    .reduce((dps, skill) => {
+      const level = state.skillLevels[skill.id] ?? 0
+      if (level <= 0 || skill.cooldownSeconds <= 0) return dps
+      const interval = skill.type === 1
+        ? skill.cooldownSeconds / state.equippedWeapon.attackSpeed
+        : skill.cooldownSeconds
+      return dps + calculateExpectedDamage(stats, getSkillValue(skill, level), skill.type === 2) / interval
+    }, 0)
+}
+
+function getHeroDpsForIndex(state: GameState, heroIndex: number): number {
+  const hero = state.heroes[heroIndex]
+  if (!hero || hero.level <= 0) return 0
+  const attackSeconds = Math.max(0.1, hero.attackInterval * HERO_ATTACK_INTERVAL_SCALE / 1000)
+  return calculateExpectedDamage(getHeroStats(state, heroIndex), 1, false) / attackSeconds
 }
 
 function getDeployedHeroesDps(state: GameState): number {
   return getDeployedHeroIds(state.deployedSlots).reduce((sum, id) => {
     const heroIndex = state.heroes.findIndex((hero) => hero.id === id)
-    if (heroIndex < 0) return sum
-    const item = state.equipmentCatalog.find((entry) => entry.id === 100030001 + heroIndex)
-    return sum + (item ? calculateExpectedDamage(sumEquipmentStats([item])) : 0)
+    return sum + (heroIndex >= 0 ? getHeroDpsForIndex(state, heroIndex) : 0)
   }, 0)
 }
 
 function getTotalDps(state: GameState): number {
   return getMainHeroExpectedDamage(state) + getDeployedHeroesDps(state)
+}
+
+function getSkillBookIds(state: GameState): number[] {
+  return state.equipmentCatalog
+    .filter((item) => item.type === 8)
+    .map((item) => item.id)
+    .sort((a, b) => a - b)
+}
+
+function getSkillBookCount(state: GameState): number {
+  return getSkillBookIds(state).reduce((sum, id) => sum + (state.ownedEquipment[id] ?? 0), 0)
+}
+
+function consumeSkillBooks(state: GameState, amount: number): Record<number, number> | null {
+  if (getSkillBookCount(state) < amount) return null
+  const owned = { ...state.ownedEquipment }
+  let remaining = amount
+  getSkillBookIds(state).forEach((id) => {
+    if (remaining <= 0) return
+    const used = Math.min(owned[id] ?? 0, remaining)
+    if (used <= 0) return
+    const next = owned[id] - used
+    if (next > 0) owned[id] = next
+    else delete owned[id]
+    remaining -= used
+  })
+  return owned
 }
 
 function applyDamage(state: GameState, damage: number): GameState {
@@ -376,14 +443,14 @@ function deployHero(state: GameState, heroId: string): GameState {
 
   const deployedIds = getDeployedHeroIds(state.deployedSlots)
   const weakestId = deployedIds.reduce((weakest, id) => {
-    const current = state.heroes.find((h) => h.id === id)!
-    const weakestHero = state.heroes.find((h) => h.id === weakest)!
-    return getHeroDps(current) < getHeroDps(weakestHero) ? id : weakest
+    const currentIndex = state.heroes.findIndex((h) => h.id === id)
+    const weakestIndex = state.heroes.findIndex((h) => h.id === weakest)
+    return getHeroDpsForIndex(state, currentIndex) < getHeroDpsForIndex(state, weakestIndex) ? id : weakest
   })
 
   const weakestHero = state.heroes.find((h) => h.id === weakestId)!
-  const newDps = getHeroDps(hero)
-  const weakestDps = getHeroDps(weakestHero)
+  const newDps = getHeroDpsForIndex(state, state.heroes.findIndex((item) => item.id === hero.id))
+  const weakestDps = getHeroDpsForIndex(state, state.heroes.findIndex((item) => item.id === weakestHero.id))
 
   if (newDps <= weakestDps) {
     return { ...state, toast: 'DPS 不足，无法替换当前队员' }
@@ -441,17 +508,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       let next = hitCooldown === state.monsterHitCooldown
         ? state
         : { ...state, monsterHitCooldown: hitCooldown }
-      const dps = getDeployedHeroesDps(next)
-      if (dps > 0) {
-        next = applyDamage(next, dps * action.deltaSeconds)
-        if (hitCooldown <= 0 && next.monsterPhase === 'fighting') {
-          next = {
-            ...next,
-            monsterHit: true,
-            monsterHitCooldown: MONSTER_HIT_EFFECT_INTERVAL_SEC,
-          }
-        }
-      }
       if (next.isBoss && next.monsterPhase === 'fighting') {
         const newTimer = next.bossTimer - action.deltaSeconds
         if (newTimer <= 0) return handleBossTimeout(next)
@@ -556,16 +612,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       }
 
     case 'UPGRADE_SKILL': {
-      const skill = getSkillById(action.skillId)
-      if (!skill) return state
+      const skill = state.skillCatalog.find(
+        (item) => item.id === action.skillId && item.ownerId === MAIN_HERO_SKILL_OWNER_ID,
+      )
+      if (!skill || skill.upgradeCost <= 0) return state
       const level = state.skillLevels[skill.id] ?? 0
-      if (level >= skill.maxLevel || state.stage < skill.unlockStage) return state
-      if (skill.prerequisiteId && (state.skillLevels[skill.prerequisiteId] ?? 0) < (skill.prerequisiteLevel ?? 1)) return state
-      const cost = getSkillUpgradeCost(level)
-      if (state.gold < cost) return { ...state, toast: '金币不足' }
+      const ownedEquipment = consumeSkillBooks(state, skill.upgradeCost)
+      if (!ownedEquipment) return { ...state, toast: '技能书不足' }
       return {
         ...state,
-        gold: state.gold - cost,
+        ownedEquipment,
         skillLevels: { ...state.skillLevels, [skill.id]: level + 1 },
         toast: level === 0 ? `解锁技能：${skill.name}` : `${skill.name} 升至 Lv.${level + 1}`,
       }
@@ -573,17 +629,52 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case 'UPGRADE_HERO': {
       const hero = state.heroes.find((item) => item.id === action.heroId)
-      if (!hero) return state
-      const cost = getHeroUpgradeCost(hero)
-      if (state.gold < cost) return { ...state, toast: '金币不足' }
+      if (!hero || hero.level <= 0) return state
+      const cost = getHeroSkillBookCost(hero.level)
+      const ownedEquipment = consumeSkillBooks(state, cost)
+      if (!ownedEquipment) return { ...state, toast: '技能书不足' }
       const heroes = state.heroes.map((item) =>
         item.id === hero.id ? { ...item, level: item.level + 1 } : item,
       )
       return {
         ...state,
-        gold: state.gold - cost,
+        ownedEquipment,
         heroes,
-        toast: hero.level === 0 ? `解锁英雄：${hero.name}` : `${hero.name} 升至 Lv.${hero.level + 1}`,
+        toast: `${hero.name} 升至 Lv.${hero.level + 1}`,
+      }
+    }
+
+    case 'EXCHANGE_SKILL_BOOKS': {
+      const book = state.equipmentCatalog.find((item) => item.type === 8)
+      if (!book) return { ...state, toast: '技能书配置尚未加载' }
+      if (state.diamonds < action.diamondCost) return { ...state, toast: '钻石不足' }
+      return {
+        ...state,
+        diamonds: state.diamonds - action.diamondCost,
+        ownedEquipment: {
+          ...state.ownedEquipment,
+          [book.id]: (state.ownedEquipment[book.id] ?? 0) + action.quantity,
+        },
+        toast: `兑换成功，获得 ${action.quantity} 本技能书`,
+      }
+    }
+
+    case 'ADD_TEST_RESOURCE': {
+      if (action.resource === 'gold') {
+        return { ...state, gold: state.gold + 1000, toast: '测试：金币 +1000' }
+      }
+      if (action.resource === 'diamonds') {
+        return { ...state, diamonds: state.diamonds + 1000, toast: '测试：钻石 +1000' }
+      }
+      const book = state.equipmentCatalog.find((item) => item.type === 8)
+      if (!book) return { ...state, toast: '技能书配置尚未加载' }
+      return {
+        ...state,
+        ownedEquipment: {
+          ...state.ownedEquipment,
+          [book.id]: (state.ownedEquipment[book.id] ?? 0) + 1000,
+        },
+        toast: '测试：技能书 +1000',
       }
     }
 
@@ -700,6 +791,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case 'MONSTER_CONFIG_ERROR':
       return { ...state, monsterConfigError: action.message }
 
+    case 'LOAD_SKILLS':
+      return { ...state, skillCatalog: action.skills, skillConfigError: null }
+
+    case 'SKILL_CONFIG_ERROR':
+      return { ...state, skillConfigError: action.message }
+
     case 'SYNC_MERGE_RESOURCES':
       return { ...state, gold: action.gold, diamonds: action.diamonds }
 
@@ -722,14 +819,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           heroes: state.heroes.map((entry, index) => index === heroIndex
             ? { ...entry, level: Math.max(1, entry.level) }
             : entry),
-        }
-      }
-      if (action.item.type === 8) {
-        return {
-          ...state,
-          ownedEquipment,
-          newEquipmentIds,
-          skillLevels: { ...state.skillLevels, heroic_slash: 1 },
         }
       }
       return { ...state, ownedEquipment, newEquipmentIds }
@@ -806,6 +895,8 @@ interface GameContextValue {
   totalDps: number
   mainHeroDps: number
   mainFireInterval: number
+  skillBookCount: number
+  hasUpgradeableSkill: boolean
   equippedWeapon: Weapon
   hasNewWeapons: boolean
   deployHero: (heroId: string) => void
@@ -817,10 +908,13 @@ interface GameContextValue {
   clearHit: () => void
   clearGoldFlash: () => void
   toggleAutoBattle: () => void
-  attackWithMainHero: (multiplier: number, isSkill?: boolean) => { damage: number; critical: boolean }
-  upgradeSkill: (skillId: string) => void
+  attackWithMainHero: (skillId: number) => { damage: number; critical: boolean }
+  attackWithHero: (heroId: string) => { damage: number; critical: boolean }
+  upgradeSkill: (skillId: number) => void
   upgradeHero: (heroId: string) => void
   upgradeWeapon: (weaponId: string) => void
+  exchangeSkillBooks: () => void
+  addTestResource: (resource: 'gold' | 'diamonds' | 'skillBooks') => void
   tick: (deltaSeconds: number) => void
   setActiveTab: (tab: ActiveTab) => void
   closeTabPanel: () => void
@@ -876,12 +970,35 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return () => { active = false }
   }, [])
 
+  useEffect(() => {
+    let active = true
+    loadSkillConfig()
+      .then((skills) => active && dispatch({ type: 'LOAD_SKILLS', skills }))
+      .catch((error: unknown) => active && dispatch({
+        type: 'SKILL_CONFIG_ERROR',
+        message: error instanceof Error ? error.message : '技能配置加载失败',
+      }))
+    return () => { active = false }
+  }, [])
+
   const equippedWeapon = state.equippedWeapon
   const totalDps = useMemo(() => getTotalDps(state), [state])
   const mainHeroDps = useMemo(() => getMainHeroExpectedDamage(state), [state])
+  const skillBookCount = useMemo(() => getSkillBookCount(state), [state])
+  const hasUpgradeableSkill = useMemo(
+    () => state.skillCatalog.some(
+      (skill) => skill.ownerId === MAIN_HERO_SKILL_OWNER_ID
+        && skill.upgradeCost > 0
+        && skillBookCount >= skill.upgradeCost,
+    ),
+    [state.skillCatalog, skillBookCount],
+  )
+  const basicSkill = state.skillCatalog.find(
+    (skill) => skill.ownerId === MAIN_HERO_SKILL_OWNER_ID && skill.type === 1,
+  )
   const mainFireInterval = useMemo(
-    () => getMainFireInterval(equippedWeapon.attackSpeed),
-    [equippedWeapon.attackSpeed],
+    () => (basicSkill?.cooldownSeconds ?? 1) * 1000 / equippedWeapon.attackSpeed,
+    [basicSkill?.cooldownSeconds, equippedWeapon.attackSpeed],
   )
   const hasNewWeapons = useMemo(
     () => state.weaponInventory.some((w) => w.isNew),
@@ -897,14 +1014,36 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const clearHit = useCallback(() => dispatch({ type: 'CLEAR_HIT' }), [])
   const clearGoldFlash = useCallback(() => dispatch({ type: 'CLEAR_GOLD_FLASH' }), [])
   const toggleAutoBattle = useCallback(() => dispatch({ type: 'TOGGLE_AUTO_BATTLE' }), [])
-  const attackWithMainHero = useCallback((multiplier: number, isSkill = true) => {
-    const result = rollDamage(sumEquipmentStats(getEquippedCombatItems(state)), multiplier, isSkill)
+  const attackWithMainHero = useCallback((skillId: number) => {
+    const skill = state.skillCatalog.find((item) => item.id === skillId)
+    const level = state.skillLevels[skillId] ?? 0
+    if (!skill || level <= 0 || skill.ownerId !== MAIN_HERO_SKILL_OWNER_ID || skill.type === 3) {
+      return { damage: 0, critical: false }
+    }
+    const result = rollDamage(getMainHeroStats(state), getSkillValue(skill, level), skill.type === 2)
     dispatch({ type: 'MAIN_HERO_ATTACK', damage: result.damage })
     return result
   }, [state])
-  const upgradeSkill = useCallback((skillId: string) => dispatch({ type: 'UPGRADE_SKILL', skillId }), [])
+  const attackWithHero = useCallback((heroId: string) => {
+    const heroIndex = state.heroes.findIndex((hero) => hero.id === heroId)
+    if (heroIndex < 0 || !isHeroDeployed(state.deployedSlots, heroId)) {
+      return { damage: 0, critical: false }
+    }
+    const result = rollDamage(getHeroStats(state, heroIndex), 1, false)
+    dispatch({ type: 'MAIN_HERO_ATTACK', damage: result.damage })
+    return result
+  }, [state])
+  const upgradeSkill = useCallback((skillId: number) => dispatch({ type: 'UPGRADE_SKILL', skillId }), [])
   const upgradeHero = useCallback((heroId: string) => dispatch({ type: 'UPGRADE_HERO', heroId }), [])
   const upgradeWeapon = useCallback((weaponId: string) => dispatch({ type: 'UPGRADE_WEAPON', weaponId }), [])
+  const exchangeSkillBooks = useCallback(
+    () => dispatch({ type: 'EXCHANGE_SKILL_BOOKS', diamondCost: 100, quantity: 100 }),
+    [],
+  )
+  const addTestResource = useCallback(
+    (resource: 'gold' | 'diamonds' | 'skillBooks') => dispatch({ type: 'ADD_TEST_RESOURCE', resource }),
+    [],
+  )
   const completeMonsterDeath = useCallback(() => dispatch({ type: 'MONSTER_DEATH_COMPLETE' }), [])
   const completeMonsterSpawn = useCallback(() => dispatch({ type: 'MONSTER_SPAWN_COMPLETE' }), [])
   const tick = useCallback((deltaSeconds: number) => dispatch({ type: 'TICK', deltaSeconds }), [])
@@ -1061,6 +1200,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       totalDps,
       mainHeroDps,
       mainFireInterval,
+      skillBookCount,
+      hasUpgradeableSkill,
       equippedWeapon,
       hasNewWeapons,
       deployHero: deployHeroAction,
@@ -1073,9 +1214,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
       clearGoldFlash,
       toggleAutoBattle,
       attackWithMainHero,
+      attackWithHero,
       upgradeSkill,
       upgradeHero,
       upgradeWeapon,
+      exchangeSkillBooks,
+      addTestResource,
       tick,
       setActiveTab,
       closeTabPanel,
@@ -1106,6 +1250,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       totalDps,
       mainHeroDps,
       mainFireInterval,
+      skillBookCount,
+      hasUpgradeableSkill,
       equippedWeapon,
       hasNewWeapons,
       deployHeroAction,
@@ -1118,9 +1264,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
       clearGoldFlash,
       toggleAutoBattle,
       attackWithMainHero,
+      attackWithHero,
       upgradeSkill,
       upgradeHero,
       upgradeWeapon,
+      exchangeSkillBooks,
+      addTestResource,
       tick,
       setActiveTab,
       closeTabPanel,
