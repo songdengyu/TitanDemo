@@ -5,8 +5,9 @@
 .diamonds { padding: 6px 10px; border: 1px solid #477a96; border-radius: 15px; background: #172c3a; color: #7edfff; font: 800 12px var(--font-body); }
 .diamonds strong { color: #d6f7ff; }
 .equipButtons { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; align-content: center; overflow-y: auto; padding: 4px 0 10px; }
-.equipBtn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-height: 112px; padding: 9px 4px; border: 2px solid rgba(139,105,20,.5); border-radius: 10px; background: linear-gradient(180deg,rgba(61,40,88,.8),rgba(42,26,61,.92)); color: var(--fantasy-text); box-shadow: 0 3px 9px rgba(0,0,0,.3); cursor: pointer; }
+.equipBtn { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-height: 112px; padding: 9px 4px; border: 2px solid rgba(139,105,20,.5); border-radius: 10px; background: linear-gradient(180deg,rgba(61,40,88,.8),rgba(42,26,61,.92)); color: var(--fantasy-text); box-shadow: 0 3px 9px rgba(0,0,0,.3); cursor: pointer; }
 .equipBtn:hover { border-color: var(--fantasy-gold); transform: translateY(-1px); }
 .equipLabel { color: var(--fantasy-gold-light); font: 700 11px var(--font-display); }
 .equipName { color: var(--fantasy-text-muted); font: 8px var(--font-body); letter-spacing: 0; }
+.redDot { position: absolute; z-index: 3; top: 6px; right: 6px; width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; background: #ec334d; box-shadow: 0 0 7px #ec334d; }
 @media (max-width: 360px) { .equipButtons { grid-template-columns: repeat(3,minmax(0,1fr)); } }

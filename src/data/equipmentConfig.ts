@@ -17,6 +17,25 @@ export interface EquipmentConfig {
   power: number | null
 }
 
+export function getEquipmentConfigPower(item: EquipmentConfig): number {
+  if (item.power !== null) return item.power
+  return Math.round(
+    (item.attack ?? 0)
+    + (item.attackBonus ?? 0) * 100
+    + (item.critRate ?? 0) * 100
+    + (item.critDamage ?? 0) * 50
+    + (item.damageBonus ?? 0) * 100
+    + (item.normalAttackDamage ?? 0) * 75
+    + (item.skillDamage ?? 0) * 75,
+  )
+}
+
+export function getEquipmentDismantleGold(item: EquipmentConfig): number {
+  if (item.type < 1 || item.type > 7) return 0
+  const tier = Math.floor((item.id - 100010001) / 7)
+  return [10, 25, 60, 150, 350][tier] ?? 10
+}
+
 function required(row: Record<string, string>, key: string): string {
   if (!row[key]) throw new Error(`equipment.csv 缺少字段 ${key}`)
   return row[key]

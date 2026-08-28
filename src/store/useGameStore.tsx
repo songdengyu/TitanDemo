@@ -8,7 +8,12 @@ import {
   useEffect,
   type ReactNode,
 } from 'react'
-import { loadEquipmentConfig, type EquipmentConfig } from '../data/equipmentConfig'
+import {
+  getEquipmentConfigPower,
+  getEquipmentDismantleGold,
+  loadEquipmentConfig,
+  type EquipmentConfig,
+} from '../data/equipmentConfig'
 import { INITIAL_HEROES, getHeroDps, getHeroUpgradeCost, type Hero } from '../data/heroes'
 import {
   createEmptyDeployedSlots,
@@ -16,7 +21,8 @@ import {
   getDeployedHeroIds,
   isHeroDeployed,
 } from '../utils/platformLayout'
-import { INITIAL_MAIN_HERO, getMainHeroDps, type MainHero } from '../data/mainHero'
+import { INITIAL_MAIN_HERO, type MainHero } from '../data/mainHero'
+import { calculateExpectedDamage, rollDamage, sumEquipmentStats } from '../data/combatStats'
 import { calcGoldReward, createMonster } from '../data/monsters'
 import { COMBAT_RESUME_GRACE_SEC } from '../data/combat'
 import {
@@ -73,6 +79,8 @@ export interface GameState {
   equipmentCatalog: EquipmentConfig[]
   equipmentConfigError: string | null
   ownedEquipment: Record<number, number>
+  equippedEquipment: Record<number, number | null>
+  newEquipmentIds: number[]
   mainHero: MainHero
   heroes: Hero[]
   deployedSlots: (string | null)[]
@@ -94,6 +102,7 @@ export interface GameState {
   weaponInventory: Weapon[]
   selectedWeaponId: string | null
   equipmentPickerType: number | null
+  selectedEquipmentId: number | null
   dialog: DialogConfig | null
 }
 
@@ -115,7 +124,7 @@ type GameAction =
   | { type: 'CLEAR_HIT' }
   | { type: 'CLEAR_GOLD_FLASH' }
   | { type: 'TOGGLE_AUTO_BATTLE' }
-  | { type: 'MAIN_HERO_ATTACK'; multiplier: number }
+  | { type: 'MAIN_HERO_ATTACK'; damage: number }
   | { type: 'UPGRADE_SKILL'; skillId: string }
   | { type: 'UPGRADE_HERO'; heroId: string }
   | { type: 'UPGRADE_WEAPON'; weaponId: string }
@@ -139,6 +148,9 @@ type GameAction =
   | { type: 'SYNC_MERGE_RESOURCES'; gold: number; diamonds: number }
   | { type: 'GRANT_EQUIPMENT'; item: EquipmentConfig; quantity: number }
   | { type: 'BUY_EQUIPMENT'; item: EquipmentConfig }
+  | { type: 'SELECT_EQUIPMENT'; equipmentId: number }
+  | { type: 'EQUIP_EQUIPMENT'; equipmentId: number; dismantlePrevious?: boolean; dismantleGold?: number }
+  | { type: 'DISMANTLE_EQUIPMENT'; equipmentId: number; gold: number }
 
 const initialMonster = createMonster(1, 0, false)
 
@@ -157,6 +169,8 @@ const initialState: GameState = {
   equipmentCatalog: [],
   equipmentConfigError: null,
   ownedEquipment: { 100010001: 1, 100020001: 1 },
+  equippedEquipment: { 1: 100010001, 2: null, 3: null, 4: null, 5: null, 6: null, 7: null },
+  newEquipmentIds: [],
   mainHero: INITIAL_MAIN_HERO,
   heroes: INITIAL_HEROES.map((hero) => ({ ...hero, level: 0 })),
   deployedSlots: createEmptyDeployedSlots(),
@@ -178,26 +192,31 @@ const initialState: GameState = {
   weaponInventory: INITIAL_WEAPON_INVENTORY,
   selectedWeaponId: null,
   equipmentPickerType: null,
+  selectedEquipmentId: null,
   dialog: null,
 }
 
-function getEquippedWeapon(state: GameState): Weapon {
-  return state.equippedWeapon
+function getEquippedCombatItems(state: GameState): EquipmentConfig[] {
+  return Object.values(state.equippedEquipment)
+    .map((id) => state.equipmentCatalog.find((item) => item.id === id))
+    .filter((item): item is EquipmentConfig => item !== undefined)
 }
 
-function getTotalDps(state: GameState): number {
-  const heroDps = getDeployedHeroIds(state.deployedSlots).reduce((sum, id) => {
-    const hero = state.heroes.find((h) => h.id === id)
-    return sum + (hero ? getHeroDps(hero) : 0)
-  }, 0)
-  return getMainHeroDps(state.mainHero, getEquippedWeapon(state)) + heroDps
+function getMainHeroExpectedDamage(state: GameState): number {
+  return calculateExpectedDamage(sumEquipmentStats(getEquippedCombatItems(state)))
 }
 
 function getDeployedHeroesDps(state: GameState): number {
   return getDeployedHeroIds(state.deployedSlots).reduce((sum, id) => {
-    const hero = state.heroes.find((h) => h.id === id)
-    return sum + (hero ? getHeroDps(hero) : 0)
+    const heroIndex = state.heroes.findIndex((hero) => hero.id === id)
+    if (heroIndex < 0) return sum
+    const item = state.equipmentCatalog.find((entry) => entry.id === 100030001 + heroIndex)
+    return sum + (item ? calculateExpectedDamage(sumEquipmentStats([item])) : 0)
   }, 0)
+}
+
+function getTotalDps(state: GameState): number {
+  return getMainHeroExpectedDamage(state) + getDeployedHeroesDps(state)
 }
 
 function applyDamage(state: GameState, damage: number): GameState {
@@ -484,10 +503,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case 'MAIN_HERO_ATTACK':
       if (state.combatGraceRemaining > 0) return state
       {
-        const next = applyDamage(
-          state,
-          getMainHeroDps(state.mainHero, getEquippedWeapon(state)) * action.multiplier,
-        )
+        const next = applyDamage(state, action.damage)
         if (state.monsterHitCooldown > 0 || next.monsterPhase !== 'fighting') return next
         return {
           ...next,
@@ -581,11 +597,17 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       }
 
     case 'OPEN_EQUIPMENT_PICKER':
+      {
+        const firstOwned = state.equipmentCatalog.find(
+          (item) => item.type === action.equipmentType && (state.ownedEquipment[item.id] ?? 0) > 0,
+        )
       return {
         ...state,
         secondaryView: 'equipment',
         equipmentPickerType: action.equipmentType,
+        selectedEquipmentId: firstOwned?.id ?? null,
         showHeroOverlay: false,
+      }
       }
 
     case 'CLOSE_SECONDARY_VIEW':
@@ -594,6 +616,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         secondaryView: null,
         selectedWeaponId: null,
         equipmentPickerType: null,
+        selectedEquipmentId: null,
         combatGraceRemaining: COMBAT_RESUME_GRACE_SEC,
       }
 
@@ -636,6 +659,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...state.ownedEquipment,
         [action.item.id]: (state.ownedEquipment[action.item.id] ?? 0) + action.quantity,
       }
+      const newEquipmentIds = action.item.type <= 7 && !state.ownedEquipment[action.item.id]
+        ? [...state.newEquipmentIds, action.item.id]
+        : state.newEquipmentIds
       if (action.item.type === 9) {
         const heroIndex = action.item.id - 100030001
         const hero = state.heroes[heroIndex]
@@ -643,6 +669,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         return {
           ...state,
           ownedEquipment,
+          newEquipmentIds,
           heroes: state.heroes.map((entry, index) => index === heroIndex
             ? { ...entry, level: Math.max(1, entry.level) }
             : entry),
@@ -652,10 +679,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         return {
           ...state,
           ownedEquipment,
+          newEquipmentIds,
           skillLevels: { ...state.skillLevels, heroic_slash: 1 },
         }
       }
-      return { ...state, ownedEquipment }
+      return { ...state, ownedEquipment, newEquipmentIds }
     }
 
     case 'BUY_EQUIPMENT': {
@@ -664,6 +692,59 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       if (state.diamonds < cost) return { ...state, toast: '钻石不足' }
       const granted = gameReducer(state, { type: 'GRANT_EQUIPMENT', item: action.item, quantity: 1 })
       return { ...granted, diamonds: state.diamonds - cost, toast: `获得 ${action.item.name}` }
+    }
+
+    case 'SELECT_EQUIPMENT':
+      return state.equipmentCatalog.some((item) => item.id === action.equipmentId)
+        ? {
+          ...state,
+          selectedEquipmentId: action.equipmentId,
+          newEquipmentIds: state.newEquipmentIds.filter((id) => id !== action.equipmentId),
+        }
+        : state
+
+    case 'EQUIP_EQUIPMENT': {
+      if (!state.ownedEquipment[action.equipmentId]) return state
+      const item = state.equipmentCatalog.find((entry) => entry.id === action.equipmentId)
+      if (!item || item.type < 1 || item.type > 7) return state
+      const previousId = state.equippedEquipment[item.type]
+      let ownedEquipment = state.ownedEquipment
+      let gold = state.gold
+      if (action.dismantlePrevious && previousId && previousId !== item.id) {
+        const previousQuantity = ownedEquipment[previousId] ?? 0
+        if (previousQuantity > 0) {
+          ownedEquipment = { ...ownedEquipment }
+          if (previousQuantity === 1) delete ownedEquipment[previousId]
+          else ownedEquipment[previousId] = previousQuantity - 1
+          gold += action.dismantleGold ?? 0
+        }
+      }
+      return {
+        ...state,
+        ownedEquipment,
+        gold,
+        equippedEquipment: { ...state.equippedEquipment, [item.type]: item.id },
+        selectedEquipmentId: item.id,
+        toast: `已装备 ${item.name}`,
+      }
+    }
+
+    case 'DISMANTLE_EQUIPMENT': {
+      const quantity = state.ownedEquipment[action.equipmentId] ?? 0
+      if (quantity <= 0) return state
+      if (Object.values(state.equippedEquipment).includes(action.equipmentId)) {
+        return { ...state, toast: '当前装备不能分解，请先替换' }
+      }
+      const ownedEquipment = { ...state.ownedEquipment }
+      if (quantity === 1) delete ownedEquipment[action.equipmentId]
+      else ownedEquipment[action.equipmentId] = quantity - 1
+      return {
+        ...state,
+        ownedEquipment,
+        gold: state.gold + action.gold,
+        selectedEquipmentId: quantity === 1 ? null : state.selectedEquipmentId,
+        toast: `分解成功，获得 ${action.gold} 金币`,
+      }
     }
 
     default:
@@ -687,7 +768,7 @@ interface GameContextValue {
   clearHit: () => void
   clearGoldFlash: () => void
   toggleAutoBattle: () => void
-  attackWithMainHero: (multiplier: number) => void
+  attackWithMainHero: (multiplier: number, isSkill?: boolean) => { damage: number; critical: boolean }
   upgradeSkill: (skillId: string) => void
   upgradeHero: (heroId: string) => void
   upgradeWeapon: (weaponId: string) => void
@@ -712,6 +793,9 @@ interface GameContextValue {
   syncMergeResources: (gold: number, diamonds: number) => void
   grantEquipment: (equipmentId: number, quantity: number) => void
   buyEquipment: (equipmentId: number) => void
+  selectEquipment: (equipmentId: number) => void
+  equipSelectedEquipment: (dismantlePrevious?: boolean) => void
+  dismantleSelectedEquipment: () => void
 }
 
 const GameContext = createContext<GameContextValue | null>(null)
@@ -734,10 +818,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const equippedWeapon = state.equippedWeapon
   const totalDps = useMemo(() => getTotalDps(state), [state])
-  const mainHeroDps = useMemo(
-    () => getMainHeroDps(state.mainHero, equippedWeapon),
-    [state.mainHero, equippedWeapon],
-  )
+  const mainHeroDps = useMemo(() => getMainHeroExpectedDamage(state), [state])
   const mainFireInterval = useMemo(
     () => getMainFireInterval(equippedWeapon.attackSpeed),
     [equippedWeapon.attackSpeed],
@@ -756,10 +837,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const clearHit = useCallback(() => dispatch({ type: 'CLEAR_HIT' }), [])
   const clearGoldFlash = useCallback(() => dispatch({ type: 'CLEAR_GOLD_FLASH' }), [])
   const toggleAutoBattle = useCallback(() => dispatch({ type: 'TOGGLE_AUTO_BATTLE' }), [])
-  const attackWithMainHero = useCallback(
-    (multiplier: number) => dispatch({ type: 'MAIN_HERO_ATTACK', multiplier }),
-    [],
-  )
+  const attackWithMainHero = useCallback((multiplier: number, isSkill = true) => {
+    const result = rollDamage(sumEquipmentStats(getEquippedCombatItems(state)), multiplier, isSkill)
+    dispatch({ type: 'MAIN_HERO_ATTACK', damage: result.damage })
+    return result
+  }, [state])
   const upgradeSkill = useCallback((skillId: string) => dispatch({ type: 'UPGRADE_SKILL', skillId }), [])
   const upgradeHero = useCallback((heroId: string) => dispatch({ type: 'UPGRADE_HERO', heroId }), [])
   const upgradeWeapon = useCallback((weaponId: string) => dispatch({ type: 'UPGRADE_WEAPON', weaponId }), [])
@@ -797,6 +879,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const item = state.equipmentCatalog.find((entry) => entry.id === equipmentId)
     if (item) dispatch({ type: 'BUY_EQUIPMENT', item })
   }, [state.equipmentCatalog])
+  const selectEquipment = useCallback(
+    (equipmentId: number) => dispatch({ type: 'SELECT_EQUIPMENT', equipmentId }),
+    [],
+  )
 
   const confirmDialog = useCallback(() => {
     onConfirmRef.current?.()
@@ -827,6 +913,62 @@ export function GameProvider({ children }: { children: ReactNode }) {
     },
     [showDialog],
   )
+
+  const equipSelectedEquipment = useCallback((dismantlePrevious = false) => {
+    if (state.selectedEquipmentId === null) return
+    const selected = state.equipmentCatalog.find((item) => item.id === state.selectedEquipmentId)
+    if (!selected) return
+    const currentId = state.equippedEquipment[selected.type]
+    const current = state.equipmentCatalog.find((item) => item.id === currentId)
+    const selectedPower = getEquipmentConfigPower(selected)
+    const currentPower = current ? getEquipmentConfigPower(current) : 0
+    const dismantleGold = current ? getEquipmentDismantleGold(current) : 0
+    const equip = () => dispatch({
+      type: 'EQUIP_EQUIPMENT',
+      equipmentId: selected.id,
+      dismantlePrevious,
+      dismantleGold,
+    })
+    if (current && selectedPower < currentPower) {
+      showDialog(
+        {
+          title: '确认替换',
+          message: '该装备比当前装备战斗力低，是否替换？',
+          confirmText: '替换',
+          cancelText: '取消',
+        },
+        equip,
+      )
+      return
+    }
+    equip()
+  }, [state.selectedEquipmentId, state.equipmentCatalog, state.equippedEquipment, showDialog])
+  const dismantleSelectedEquipment = useCallback(() => {
+    if (state.selectedEquipmentId === null) return
+    const selected = state.equipmentCatalog.find((item) => item.id === state.selectedEquipmentId)
+    if (!selected || !(state.ownedEquipment[selected.id] ?? 0)) return
+    if (Object.values(state.equippedEquipment).includes(selected.id)) {
+      showAlert('无法分解', '当前装备不能分解，请先替换。')
+      return
+    }
+    const gold = getEquipmentDismantleGold(selected)
+    const currentId = state.equippedEquipment[selected.type]
+    const current = state.equipmentCatalog.find((item) => item.id === currentId)
+    const dismantle = () => dispatch({ type: 'DISMANTLE_EQUIPMENT', equipmentId: selected.id, gold })
+    if (current && getEquipmentConfigPower(selected) > getEquipmentConfigPower(current)) {
+      showDialog(
+        {
+          title: '确认分解',
+          message: '该装备比当前装备战斗力更强，是否分解？',
+          confirmText: '分解',
+          cancelText: '取消',
+        },
+        dismantle,
+      )
+      return
+    }
+    dismantle()
+  }, [state.selectedEquipmentId, state.equipmentCatalog, state.ownedEquipment, state.equippedEquipment, showAlert, showDialog])
 
   const tryEquipWeapon = useCallback(() => {
     const selectedId = state.selectedWeaponId
@@ -895,6 +1037,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       syncMergeResources,
       grantEquipment,
       buyEquipment,
+      selectEquipment,
+      equipSelectedEquipment,
+      dismantleSelectedEquipment,
     }),
     [
       state,
@@ -937,6 +1082,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       syncMergeResources,
       grantEquipment,
       buyEquipment,
+      selectEquipment,
+      equipSelectedEquipment,
+      dismantleSelectedEquipment,
     ],
   )
 

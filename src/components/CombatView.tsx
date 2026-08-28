@@ -156,9 +156,9 @@ export function CombatView() {
     if (!arena || !monsterEl) return
 
     showSkillEffect(arena, monsterEl, skill)
-    showDamageOnMonster(mainHeroDps * multiplier, true)
-    attackWithMainHero(multiplier)
-  }, [attackWithMainHero, combatActive, mainHeroDps, showDamageOnMonster, showSkillEffect, state.skillLevels])
+    const result = attackWithMainHero(multiplier, true)
+    showDamageOnMonster(result.damage, true)
+  }, [attackWithMainHero, combatActive, showDamageOnMonster, showSkillEffect, state.skillLevels])
 
   useEffect(() => {
     if (!combatActive || !state.autoBattle) return
