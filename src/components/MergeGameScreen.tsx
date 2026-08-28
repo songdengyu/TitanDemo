@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type PointerEvent } from 'react'
 import { createMergeGameState, createMergeReducer, canCompleteOrder, isHighestGeneratorOnBoard, WAREHOUSE_EXPANSION_COSTS, type MergeEffect } from '../data/mergeGame'
 import { loadMergeConfig, type MergeConfig } from '../data/mergeConfig'
+import { getEquipmentDismantleGold } from '../data/equipmentConfig'
 import { useGameStore } from '../store/useGameStore'
 import { CharacterAvatar } from './CharacterAvatar'
 import { MergePiece } from './MergePiece'
@@ -136,7 +137,13 @@ function MergeGame({ config }: { config: MergeConfig }) {
       : null
 
   function finishOrder(slot: number) {
-    dispatch({ type: 'COMPLETE_ORDER', slot })
+    const orderState = state.activeOrders[slot]
+    const order = orderState ? config.orders[orderState.configIndex] : null
+    dispatch({
+      type: 'COMPLETE_ORDER',
+      slot,
+      alreadyOwned: order ? (gameState.ownedEquipment[order.equipmentId] ?? 0) > 0 : false,
+    })
   }
 
   function onPointerDown(event: PointerEvent<HTMLButtonElement>, index: number) {
@@ -250,6 +257,10 @@ function MergeGame({ config }: { config: MergeConfig }) {
           const order = config.orders[orderState.configIndex]
           const ready = canCompleteOrder(state, order)
           const equipment = config.equipment.get(order.equipmentId)
+          const alreadyOwned = (gameState.ownedEquipment[order.equipmentId] ?? 0) > 0
+          const convertGold = alreadyOwned && equipment
+            ? getEquipmentDismantleGold(equipment) * order.quantity
+            : 0
           const reward = EQUIPMENT_EFFECTS[equipment?.type ?? 1] ?? EQUIPMENT_EFFECTS[1]
           return (
             <article
@@ -265,13 +276,14 @@ function MergeGame({ config }: { config: MergeConfig }) {
                 ))}
               </div>
               <div
-                className={`${styles.orderRewardPreview} ${styles[reward.className]}`}
-                title={`${reward.label} ×${order.quantity}`}
-                aria-label={`订单奖励：${reward.label}，数量 ${order.quantity}`}
+                className={`${styles.orderRewardPreview} ${alreadyOwned ? styles.orderGoldReward : styles[reward.className]}`}
+                title={alreadyOwned ? `已拥有，转化为 ${convertGold} 金币` : `${reward.label} ×${order.quantity}`}
+                aria-label={alreadyOwned ? `订单奖励已拥有，转化为 ${convertGold} 金币` : `订单奖励：${reward.label}，数量 ${order.quantity}`}
               >
-                <small className={styles.rewardLabel}>奖励</small>
-                <span>{reward.symbol}</span>
-                {order.quantity > 1 && <strong>×{order.quantity}</strong>}
+                <small className={styles.rewardLabel}>{alreadyOwned ? '转化' : '奖励'}</small>
+                <span>{alreadyOwned ? '●' : reward.symbol}</span>
+                {!alreadyOwned && order.quantity > 1 && <strong>×{order.quantity}</strong>}
+                {alreadyOwned && <strong>{convertGold}</strong>}
               </div>
               <button
                 type="button"
@@ -284,18 +296,19 @@ function MergeGame({ config }: { config: MergeConfig }) {
             </article>
           )
         })}
-        {state.effects.filter((effect) => effect.kind === 'order-reward').map((effect) => {
+        {state.effects.filter((effect) => effect.kind === 'order-reward' || effect.kind === 'order-gold').map((effect) => {
           const reward = EQUIPMENT_EFFECTS[effect.equipmentType ?? 1] ?? EQUIPMENT_EFFECTS[1]
+          const converted = effect.kind === 'order-gold'
           return (
             <span
               key={effect.id}
-              className={`${styles.orderRewardEffect} ${styles[reward.className]}`}
+              className={`${styles.orderRewardEffect} ${converted ? styles.orderGoldReward : styles[reward.className]}`}
               style={{ '--order-slot': effect.sourceIndex } as React.CSSProperties}
               onAnimationEnd={() => dispatch({ type: 'CLEAR_EFFECT', id: effect.id })}
             >
               <span className={styles.rewardBurst} />
-              <span className={styles.rewardIcon}>{reward.symbol}</span>
-              <strong>{reward.label}</strong>
+              <span className={styles.rewardIcon}>{converted ? '●' : reward.symbol}</span>
+              <strong>{converted ? `+${effect.amount ?? 0} 金币` : reward.label}</strong>
             </span>
           )
         })}

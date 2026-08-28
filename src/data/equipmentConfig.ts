@@ -15,6 +15,7 @@ export interface EquipmentConfig {
   normalAttackDamage: number | null
   skillDamage: number | null
   power: number | null
+  dismantleGold: number
 }
 
 export function getEquipmentConfigPower(item: EquipmentConfig): number {
@@ -31,9 +32,7 @@ export function getEquipmentConfigPower(item: EquipmentConfig): number {
 }
 
 export function getEquipmentDismantleGold(item: EquipmentConfig): number {
-  if (item.type < 1 || item.type > 7) return 0
-  const tier = Math.floor((item.id - 100010001) / 7)
-  return [10, 25, 60, 150, 350][tier] ?? 10
+  return Math.max(0, item.dismantleGold)
 }
 
 function required(row: Record<string, string>, key: string): string {
@@ -60,22 +59,28 @@ function optionalNumber(value: string, key: string): number | null {
 }
 
 export function parseEquipmentConfig(text: string): EquipmentConfig[] {
-  const equipment = parseCsv(text).map((row) => ({
-    id: integer(required(row, 'equipment_id'), 'equipment_id'),
-    type: integer(required(row, 'equipment_type'), 'equipment_type'),
-    name: required(row, 'name'),
-    diamond: optionalInteger(row.diamond),
-    description: required(row, 'description'),
-    icon: required(row, 'icon'),
-    attack: optionalNumber(row.attack, 'attack'),
-    attackBonus: optionalNumber(row.attack_bonus, 'attack_bonus'),
-    critRate: optionalNumber(row.crit_rate, 'crit_rate'),
-    critDamage: optionalNumber(row.crit_damage, 'crit_damage'),
-    damageBonus: optionalNumber(row.damage_bonus, 'damage_bonus'),
-    normalAttackDamage: optionalNumber(row.normal_attack_damage, 'normal_attack_damage'),
-    skillDamage: optionalNumber(row.skill_damage, 'skill_damage'),
-    power: optionalNumber(row.power, 'power'),
-  }))
+  const equipment = parseCsv(text).map((row) => {
+    const id = integer(required(row, 'equipment_id'), 'equipment_id')
+    const dismantleGold = integer(required(row, 'dismantle_gold'), `装备 ${id} dismantle_gold`)
+    if (dismantleGold < 0) throw new Error(`装备 ${id} dismantle_gold 不能小于 0`)
+    return {
+      id,
+      type: integer(required(row, 'equipment_type'), 'equipment_type'),
+      name: required(row, 'name'),
+      diamond: optionalInteger(row.diamond),
+      description: required(row, 'description'),
+      icon: required(row, 'icon'),
+      attack: optionalNumber(row.attack, 'attack'),
+      attackBonus: optionalNumber(row.attack_bonus, 'attack_bonus'),
+      critRate: optionalNumber(row.crit_rate, 'crit_rate'),
+      critDamage: optionalNumber(row.crit_damage, 'crit_damage'),
+      damageBonus: optionalNumber(row.damage_bonus, 'damage_bonus'),
+      normalAttackDamage: optionalNumber(row.normal_attack_damage, 'normal_attack_damage'),
+      skillDamage: optionalNumber(row.skill_damage, 'skill_damage'),
+      power: optionalNumber(row.power, 'power'),
+      dismantleGold,
+    }
+  })
   const ids = new Set<number>()
   equipment.forEach((item) => {
     if (ids.has(item.id)) throw new Error(`重复 equipment_id: ${item.id}`)

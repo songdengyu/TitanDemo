@@ -1,4 +1,5 @@
 import type { InitialMergeCell, MergeConfig, MergeItemConfig, MergeOrderConfig } from './mergeConfig'
+import { getEquipmentDismantleGold } from './equipmentConfig'
 
 export interface MergeCell extends InitialMergeCell {
   rewardClaimed: boolean
@@ -11,7 +12,7 @@ export interface MergeOrderState {
 
 export interface MergeEffect {
   id: number
-  kind: 'order-reward' | 'gold-gain' | 'gold-spend' | 'merge'
+  kind: 'order-reward' | 'order-gold' | 'gold-gain' | 'gold-spend' | 'merge'
   sourceIndex: number
   amount?: number
   equipmentType?: number
@@ -39,7 +40,7 @@ export type MergeGameAction =
   | { type: 'SELECT_CELL'; index: number }
   | { type: 'MOVE_CELL'; from: number; to: number }
   | { type: 'USE_CELL'; index: number }
-  | { type: 'COMPLETE_ORDER'; slot: number }
+  | { type: 'COMPLETE_ORDER'; slot: number; alreadyOwned?: boolean }
   | { type: 'FINISH_ORDER_LEAVE'; slot: number }
   | { type: 'STORE_CELL'; index: number }
   | { type: 'SELECT_WAREHOUSE'; index: number }
@@ -300,20 +301,29 @@ export function createMergeReducer(config: MergeConfig) {
         if (!orderState || orderState.leaving) return state
         const order = config.orders[orderState.configIndex]
         if (!canCompleteOrder(state, order)) return { ...state, message: '订单所需棋子不足' }
+        const equipment = config.equipment.get(order.equipmentId)
+        const convertGold = action.alreadyOwned && equipment
+          ? getEquipmentDismantleGold(equipment) * order.quantity
+          : 0
+        const converted = Boolean(action.alreadyOwned && equipment)
         const activeOrders = state.activeOrders.map((entry, index) => index === action.slot ? { ...entry, leaving: true } : entry)
         return {
           ...state,
           board: removeRequirements(state.board, order.requirements),
+          gold: state.gold + convertGold,
           activeOrders,
           selectedCell: null,
-          message: `订单完成，获得装备 ${order.equipmentId} ×${order.quantity}`,
+          message: converted
+            ? `订单完成，已拥有 ${equipment?.name ?? order.equipmentId}，转化为 ${convertGold} 金币`
+            : `订单完成，获得 ${equipment?.name ?? `装备 ${order.equipmentId}`} ×${order.quantity}`,
           animationKey: state.animationKey + 1,
           spawnedCell: null,
           effects: [{
             id: state.animationKey + 1,
-            kind: 'order-reward',
+            kind: converted ? 'order-gold' : 'order-reward',
             sourceIndex: action.slot,
-            equipmentType: config.equipment.get(order.equipmentId)?.type,
+            amount: converted ? convertGold : undefined,
+            equipmentType: equipment?.type,
             equipmentId: order.equipmentId,
             quantity: order.quantity,
           }],

@@ -151,6 +151,7 @@
 .artifactReward { color: #ff864c; }
 .bookReward { color: #769cff; }
 .heroReward { color: #ff73aa; }
+.orderGoldReward { color: #f0c14b; }
 
 .boardWrap { flex: 1; min-height: 0; display: grid; place-items: center; padding: 8px 9px; }
 .board { width: min(100%, calc((100dvh - 250px) * 7 / 9)); aspect-ratio: 7 / 9; display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(9, 1fr); gap: 3px; padding: 5px; border: 2px solid #735329; border-radius: 10px; background: #161321; box-shadow: inset 0 0 20px #06040a, 0 0 18px rgba(127, 75, 166, 0.28); }
