@@ -77,6 +77,7 @@
 .companion { display: grid; grid-template-columns: 50px minmax(0,1fr) 70px; align-items: center; gap: 8px; min-height: 82px; padding: 8px; border: 1px solid #574761; border-radius: 9px; background: linear-gradient(110deg,#30243b,#1c1525); }
 .companion.deployed { border-color: #65a658; background: linear-gradient(110deg,rgba(55,105,46,.35),#1c1525); }
 .companion.locked > :not(.actions) { opacity: .55; filter: grayscale(.6); }
+.companion.affordable { border-color: #58a4c1; background: linear-gradient(110deg, rgba(52, 124, 148, .32), #1c1525); }
 .companionInfo { min-width: 0; }
 .companionInfo strong { color: #f4e4d2; font: 700 12px var(--font-display); }
 .companionInfo span { margin-left: 6px; color: #bca363; font: 700 8px var(--font-body); }

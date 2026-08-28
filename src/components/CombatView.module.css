@@ -161,6 +161,12 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
+.currencies {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .gold {
   display: flex;
   align-items: center;
@@ -174,6 +180,21 @@
   border-radius: 6px;
   border: 2px solid var(--fantasy-border);
   transition: transform 0.15s ease, color 0.15s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.diamonds {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(180deg, #1d3a4c 0%, #142833 100%);
+  color: #7edfff;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 2px solid #477a96;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 

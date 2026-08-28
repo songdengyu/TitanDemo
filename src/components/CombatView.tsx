@@ -45,6 +45,7 @@ export function CombatView() {
     isBoss,
     bossTimer,
     gold,
+    diamonds,
     goldFlash,
     monsterHit,
     deployedSlots,
@@ -255,8 +256,11 @@ export function CombatView() {
               <span className={styles.progress}>{killCount}/9</span>
             )}
             <span className={styles.stage}>第 {state.stage} 关</span>
-            <span ref={goldRef} className={`${styles.gold} ${goldFlash ? styles.goldFlash : ''}`}>
-              <ArtIcon sheet="ui" name="coin" className={styles.coinIcon} /> {gold}
+            <span className={styles.currencies}>
+              <span ref={goldRef} className={`${styles.gold} ${goldFlash ? styles.goldFlash : ''}`}>
+                <ArtIcon sheet="ui" name="coin" className={styles.coinIcon} /> {gold}
+              </span>
+              <span className={styles.diamonds}>◆ {diamonds}</span>
             </span>
           </div>
         </div>

@@ -19,7 +19,7 @@ export function SkillsTab() {
           const owned = quantity > 0
           const canBuy = skill.diamond !== null && state.diamonds >= skill.diamond
           return (
-            <article key={skill.id} className={`${styles.skillCard} ${!owned ? styles.locked : ''}`}>
+            <article key={skill.id} className={`${styles.skillCard} ${owned ? '' : canBuy ? styles.affordable : styles.locked}`}>
               <EquipmentArt item={skill} size="md" />
               <div className={styles.skillInfo}>
                 <div className={styles.skillTitle}><strong>{skill.name}</strong><span>{owned ? `已解锁 ×${quantity}` : '未解锁'}</span></div>
@@ -29,7 +29,7 @@ export function SkillsTab() {
               {owned ? <div className={styles.ownedBadge}>已获得</div> : (
                 <button
                   type="button"
-                  className={`${styles.upgradeBtn} ${canBuy ? styles.unlockReady : ''}`}
+                  className={`${styles.upgradeBtn} ${canBuy ? styles.canBuy : ''}`}
                   disabled={skill.diamond === null || !canBuy}
                   onClick={() => buyEquipment(skill.id)}
                 >

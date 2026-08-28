@@ -176,6 +176,6 @@ export async function loadMergeConfig(): Promise<MergeConfig> {
     equipment,
     initialBoard: parseBoard(boardText, itemById),
     initialGold: 2000,
-    initialGems: 500,
+    initialGems: 5000,
   }
 }

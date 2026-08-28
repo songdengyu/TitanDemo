@@ -174,7 +174,7 @@ const initialState: GameState = {
   pendingTransition: null,
   combatGraceRemaining: 0,
   gold: 2000,
-  diamonds: 500,
+  diamonds: 5000,
   equipmentCatalog: [],
   equipmentConfigError: null,
   monsterCatalog: [],

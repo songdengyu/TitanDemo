@@ -23,7 +23,7 @@ export function HeroPanel() {
           const deployed = isHeroDeployed(state.deployedSlots, hero.id)
           const canBuy = item.diamond !== null && state.diamonds >= item.diamond
           return (
-            <article key={item.id} className={`${styles.companion} ${deployed ? styles.deployed : ''} ${!owned ? styles.locked : ''}`}>
+            <article key={item.id} className={`${styles.companion} ${deployed ? styles.deployed : ''} ${!owned ? (canBuy ? styles.affordable : styles.locked) : ''}`}>
               <EquipmentArt item={item} size="md" />
               <div className={styles.companionInfo}>
                 <strong>{item.name}</strong><span>{owned ? '已解锁' : '未解锁'}</span>

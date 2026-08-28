@@ -80,8 +80,13 @@ export function EquipmentPickerPanel() {
               分解 · ● {selected ? getEquipmentDismantleGold(selected) : 0}
             </button>
           ) : selected ? (
-            <button type="button" className={styles.buyBtn} disabled={selected.diamond === null || state.diamonds < selected.diamond} onClick={() => buyEquipment(selected.id)}>
-              {selected.diamond === null ? '仅合成产出' : `钻石购买 · ◆ ${selected.diamond}`}
+            <button
+              type="button"
+              className={`${styles.buyBtn} ${selected.diamond !== null && state.diamonds >= selected.diamond ? styles.canBuy : ''}`}
+              disabled={selected.diamond === null || state.diamonds < selected.diamond}
+              onClick={() => buyEquipment(selected.id)}
+            >
+              {selected.diamond === null ? '仅合成产出' : `钻石解锁 · ◆ ${selected.diamond}`}
             </button>
           ) : <span />}
           <button type="button" className={styles.equipAction} disabled={!selectedOwned || selected?.id === equipped?.id} onClick={() => equipSelectedEquipment(dismantlePrevious)}>
@@ -100,17 +105,18 @@ export function EquipmentPickerPanel() {
               const quantity = state.ownedEquipment[item.id] ?? 0
               const owned = quantity > 0
               const isEquipped = equipped?.id === item.id
+              const canBuy = !owned && item.diamond !== null && state.diamonds >= item.diamond
               return (
                 <button
                   key={item.id}
                   type="button"
-                  className={`${styles.gridItem} ${state.selectedEquipmentId === item.id ? styles.selected : ''} ${!owned ? styles.locked : ''} ${isEquipped ? styles.equipped : ''}`}
+                  className={`${styles.gridItem} ${state.selectedEquipmentId === item.id ? styles.selected : ''} ${!owned && !canBuy ? styles.locked : ''} ${canBuy ? styles.affordable : ''} ${isEquipped ? styles.equipped : ''}`}
                   onClick={() => selectEquipment(item.id)}
                 >
                   <span className={styles.gridArt}><EquipmentArt item={item} size="md" /></span>
                   {state.newEquipmentIds.includes(item.id) && <i className={styles.itemRedDot} />}
                   <strong>{item.name}</strong>
-                  <span>{isEquipped ? '装备中' : owned ? `持有 ×${quantity}` : item.diamond === null ? '仅合成' : `◆ ${item.diamond}`}</span>
+                  <span>{isEquipped ? '装备中' : owned ? `持有 ×${quantity}` : canBuy ? `解锁 ◆ ${item.diamond}` : item.diamond === null ? '仅合成' : `◆ ${item.diamond}`}</span>
                 </button>
               )
             })}

@@ -16,6 +16,7 @@
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 12px; }
 .actions button { min-height: 42px; border: 1px solid; border-radius: 7px; font: 800 10px var(--font-body); }
 .buyBtn { border-color: #4c9eba !important; background: linear-gradient(#377f97,#204a5b); color: white; }
+.canBuy { opacity: 1 !important; box-shadow: 0 0 8px rgba(88, 164, 193, .35); }
 .dismantleBtn { border-color: #9b4f45 !important; background: linear-gradient(#8d493e,#562c28); color: #ffd0c8; }
 .equipAction { border-color: #60924b !important; background: linear-gradient(#619c47,#38642e); color: white; }
 .actions button:disabled { opacity: .35; cursor: not-allowed; }
@@ -33,6 +34,10 @@
 .gridItem.locked .gridArt { opacity: .3; filter: grayscale(1) brightness(.55); }
 .gridItem.locked > span:last-child { color: #6d6971; opacity: .75; filter: grayscale(1); }
 .gridItem.locked.selected { border-color: #67616b; background: #242127; box-shadow: 0 0 7px rgba(180,170,185,.12); }
+.gridItem.affordable { border-color: #58a4c1; background: #1b3140; box-shadow: 0 0 8px rgba(88, 164, 193, .28); }
+.gridItem.affordable > * { opacity: 1; filter: none; }
+.gridItem.affordable > span:last-child { color: #7edfff; font-weight: 800; }
+.gridItem.affordable.selected { border-color: #8fe6ff; background: #234255; }
 .gridArt { display: grid; place-items: center; }
 .itemRedDot { position: absolute; z-index: 4; top: 3px; left: 3px; width: 9px; height: 9px; border: 1px solid white; border-radius: 50%; background: #ed354e; box-shadow: 0 0 6px #ed354e; }
 .typeTabs { display: flex; flex: 0 0 auto; border-top: 1px solid rgba(139,105,20,.3); background: #17101f; overflow-x: auto; }

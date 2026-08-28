@@ -32,8 +32,8 @@
 .upgradeBtn span, .upgradeBtn strong { display: block; font-size: 10px; }
 .upgradeBtn strong { margin-top: 3px; color: var(--skill-accent); }
 .upgradeBtn:disabled { border-color: #51475a; color: #81778a; background: #241e2b; cursor: not-allowed; }
-.unlockReady { border-color: #ffe08a; color: #241706; background: linear-gradient(180deg, #ffe58c, #e9ad2f); box-shadow: 0 0 12px rgba(240,193,75,.65), inset 0 1px rgba(255,255,255,.55); text-shadow: 0 1px rgba(255,255,255,.35); animation: unlockPulse 1.3s ease-in-out infinite; }
-.unlockReady strong { color: #4c2b05; }
+.canBuy { border-color: #58a4c1; color: #fff; background: linear-gradient(#347c94, #204b5c); }
+.canBuy strong { color: #b8efff; }
 .upgradeBtn i { position: absolute; right: -4px; top: -4px; width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; background: #ed394f; box-shadow: 0 0 7px #ed394f; }
 .detailOverlay { position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; padding: 24px; background: rgba(8,5,15,.78); backdrop-filter: blur(3px); }
 .detail { position: relative; width: min(300px,90vw); padding: 20px; text-align: center; border: 2px solid var(--fantasy-border); border-radius: 14px; background: linear-gradient(#372546,#1d1428); box-shadow: 0 16px 50px #000; }
@@ -45,4 +45,3 @@
 .detailStats { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 14px; }
 .detailStats span { padding: 7px; color: #9f93a5; font: 9px var(--font-body); background: #17101f; border-radius: 6px; }
 .detailStats b { display: block; margin-top: 2px; color: #fff; font-size: 11px; }
-@keyframes unlockPulse { 50% { filter: brightness(1.14); box-shadow: 0 0 18px rgba(255,211,91,.85), inset 0 1px rgba(255,255,255,.65); } }
