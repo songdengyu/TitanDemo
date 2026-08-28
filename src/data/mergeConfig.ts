@@ -1,4 +1,7 @@
 import { parseCsv } from './csv'
+import { parseEquipmentConfig, type EquipmentConfig } from './equipmentConfig'
+
+export type { EquipmentConfig } from './equipmentConfig'
 
 export type MergeItemType = 'generator' | 'normal' | 'special'
 export type CellLock = 0 | 1 | 2
@@ -22,20 +25,6 @@ export interface MergeOrderConfig {
   requirements: number[]
   equipmentId: number
   quantity: number
-}
-
-export interface EquipmentConfig {
-  id: number
-  type: number
-  attack: number | null
-  attackBonus: number | null
-  critRate: number | null
-  critDamage: number | null
-  damageBonus: number | null
-  normalAttackDamage: number | null
-  skillDamage: number | null
-  power: number | null
-  icon: string
 }
 
 export interface InitialMergeCell {
@@ -148,33 +137,6 @@ function parseOrders(text: string, itemById: Map<number, MergeItemConfig>): Merg
   return orders
 }
 
-function optionalNumber(value: string, label: string): number | null {
-  if (!value) return null
-  const normalized = value.endsWith('%') ? String(Number(value.slice(0, -1)) / 100) : value
-  const parsed = Number(normalized)
-  if (!Number.isFinite(parsed)) throw new Error(`${label} 不是有效数值: ${value}`)
-  return parsed
-}
-
-function parseEquipment(text: string): Map<number, EquipmentConfig> {
-  return new Map(parseCsv(text).map((row) => {
-    const equipment = {
-      id: integer(required(row, 'equipment_id', '装备配置'), 'equipment_id'),
-      type: integer(required(row, 'equipment_type', '装备配置'), 'equipment_type'),
-      attack: optionalNumber(row.attack, 'attack'),
-      attackBonus: optionalNumber(row.attack_bonus, 'attack_bonus'),
-      critRate: optionalNumber(row.crit_rate, 'crit_rate'),
-      critDamage: optionalNumber(row.crit_damage, 'crit_damage'),
-      damageBonus: optionalNumber(row.damage_bonus, 'damage_bonus'),
-      normalAttackDamage: optionalNumber(row.normal_attack_damage, 'normal_attack_damage'),
-      skillDamage: optionalNumber(row.skill_damage, 'skill_damage'),
-      power: optionalNumber(row.power, 'power'),
-      icon: row.icon,
-    }
-    return [equipment.id, equipment]
-  }))
-}
-
 function parseBoard(text: string, itemById: Map<number, MergeItemConfig>) {
   const rows = parseCsv(text)
   if (rows.length !== 63) throw new Error(`初始棋盘必须有 63 格，实际 ${rows.length}`)
@@ -203,7 +165,7 @@ export async function loadMergeConfig(): Promise<MergeConfig> {
   const items = parseItems(itemsText)
   const itemById = validateItems(items)
   const orders = parseOrders(ordersText, itemById)
-  const equipment = parseEquipment(equipmentText)
+  const equipment = new Map(parseEquipmentConfig(equipmentText).map((item) => [item.id, item]))
   orders.forEach((order) => {
     if (!equipment.has(order.equipmentId)) throw new Error(`订单 ${order.id} 装备 ${order.equipmentId} 未配置`)
   })

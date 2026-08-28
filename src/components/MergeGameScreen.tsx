@@ -58,14 +58,38 @@ function GoldEffect({ effect, clear }: { effect: MergeEffect; clear: () => void 
 }
 
 function MergeGame({ config }: { config: MergeConfig }) {
-  const { closeSecondaryView, showToast } = useGameStore()
+  const {
+    state: gameState,
+    closeSecondaryView,
+    showToast,
+    syncMergeResources,
+    grantEquipment,
+  } = useGameStore()
   const reducer = useMemo(() => createMergeReducer(config), [config])
-  const [state, dispatch] = useReducer(reducer, config, createMergeGameState)
+  const initialConfig = useMemo(() => ({
+    ...config,
+    initialGold: gameState.gold,
+    initialGems: gameState.diamonds,
+  }), [config, gameState.gold, gameState.diamonds])
+  const [state, dispatch] = useReducer(reducer, initialConfig, createMergeGameState)
   const [warehouseOpen, setWarehouseOpen] = useState(false)
   const [warehouseDrag, setWarehouseDrag] = useState<WarehouseDragVisual | null>(null)
   const [dragVisual, setDragVisual] = useState<DragVisual | null>(null)
   const [dragTarget, setDragTarget] = useState<number | null>(null)
   const dragRef = useRef<DragState | null>(null)
+  const grantedEffectsRef = useRef(new Set<number>())
+
+  useEffect(() => {
+    syncMergeResources(state.gold, state.gems)
+  }, [state.gold, state.gems, syncMergeResources])
+
+  useEffect(() => {
+    state.effects.forEach((effect) => {
+      if (effect.kind !== 'order-reward' || !effect.equipmentId || grantedEffectsRef.current.has(effect.id)) return
+      grantedEffectsRef.current.add(effect.id)
+      grantEquipment(effect.equipmentId, effect.quantity ?? 1)
+    })
+  }, [state.effects, grantEquipment])
 
   useEffect(() => {
     if (!warehouseDrag) return

@@ -15,6 +15,8 @@ export interface MergeEffect {
   sourceIndex: number
   amount?: number
   equipmentType?: number
+  equipmentId?: number
+  quantity?: number
 }
 
 export interface MergeGameState {
@@ -312,6 +314,8 @@ export function createMergeReducer(config: MergeConfig) {
             kind: 'order-reward',
             sourceIndex: action.slot,
             equipmentType: config.equipment.get(order.equipmentId)?.type,
+            equipmentId: order.equipmentId,
+            quantity: order.quantity,
           }],
         }
       }

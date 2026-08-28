@@ -1,52 +1,39 @@
 import { useGameStore } from '../store/useGameStore'
-import { WeaponIcon } from './WeaponIcon'
-import { ArtIcon } from './ArtIcon'
+import { EquipmentArt } from './EquipmentArt'
 import styles from './EquipmentTab.module.css'
 
-const SYSTEM_ENTRIES = [
-  { id: 'relic', label: '遗物' },
-  { id: 'prestige', label: '转生' },
-  { id: 'shop', label: '商店' },
-  { id: 'quest', label: '任务' },
+const EQUIPMENT_TYPES = [
+  { id: 1, label: '武器' },
+  { id: 2, label: '副武器' },
+  { id: 3, label: '头盔' },
+  { id: 4, label: '衣服' },
+  { id: 5, label: '腰带' },
+  { id: 6, label: '鞋子' },
+  { id: 7, label: '神器' },
 ]
 
 export function EquipmentTab() {
-  const { equippedWeapon, hasNewWeapons, openWeaponPicker, showAlert } = useGameStore()
+  const { state, openEquipmentPicker } = useGameStore()
 
   return (
     <div className={styles.tab}>
-      <div className={styles.systemRow}>
-        {SYSTEM_ENTRIES.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            className={styles.systemBtn}
-            onClick={() => showAlert(entry.label, `${entry.label}系统暂未开放，敬请期待。`)}
-          >
-            <ArtIcon sheet="ui" name={entry.id} className={styles.systemIcon} />
-            <span>{entry.label}</span>
-          </button>
-        ))}
-      </div>
-
+      <header className={styles.header}>
+        <div><span>勇者装备</span><h2>装备栏</h2></div>
+        <div className={styles.diamonds}>◆ <strong>{state.diamonds}</strong></div>
+      </header>
       <div className={styles.equipButtons}>
-        <button type="button" className={styles.equipBtn} onClick={openWeaponPicker}>
-          {hasNewWeapons && <span className={styles.redDot} />}
-            <WeaponIcon
-              weaponId={equippedWeapon.id}
-              bulletStyle={equippedWeapon.bulletStyle}
-            quality={equippedWeapon.quality}
-            size="lg"
-          />
-          <span className={styles.equipLabel}>武器</span>
-          <span className={styles.equipName}>{equippedWeapon.name}</span>
-        </button>
-
-        <button type="button" className={`${styles.equipBtn} ${styles.disabled}`} disabled>
-          <div className={styles.armorPlaceholder}><ArtIcon sheet="ui" name="armor" /></div>
-          <span className={styles.equipLabel}>盔甲</span>
-          <span className={styles.comingSoon}>即将开放</span>
-        </button>
+        {EQUIPMENT_TYPES.map((type) => {
+          const items = state.equipmentCatalog.filter((item) => item.type === type.id)
+          const owned = items.filter((item) => (state.ownedEquipment[item.id] ?? 0) > 0)
+          const featured = owned[owned.length - 1] ?? items[0]
+          return (
+            <button key={type.id} type="button" className={styles.equipBtn} onClick={() => openEquipmentPicker(type.id)}>
+              {featured && <EquipmentArt item={featured} size="lg" />}
+              <span className={styles.equipLabel}>{type.label}</span>
+              <span className={styles.equipName}>{owned.length > 0 ? `已获得 ${owned.length}/${items.length}` : '尚未获得'}</span>
+            </button>
+          )
+        })}
       </div>
     </div>
   )

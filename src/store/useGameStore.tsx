@@ -5,8 +5,10 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useEffect,
   type ReactNode,
 } from 'react'
+import { loadEquipmentConfig, type EquipmentConfig } from '../data/equipmentConfig'
 import { INITIAL_HEROES, getHeroDps, getHeroUpgradeCost, type Hero } from '../data/heroes'
 import {
   createEmptyDeployedSlots,
@@ -15,7 +17,7 @@ import {
   isHeroDeployed,
 } from '../utils/platformLayout'
 import { INITIAL_MAIN_HERO, getMainHeroDps, type MainHero } from '../data/mainHero'
-import { calcGoldReward, createMonster, createRandomNormalMonster } from '../data/monsters'
+import { calcGoldReward, createMonster } from '../data/monsters'
 import { COMBAT_RESUME_GRACE_SEC } from '../data/combat'
 import {
   INITIAL_SKILL_LEVELS,
@@ -34,7 +36,7 @@ import {
 } from '../data/weapons'
 
 export type ActiveTab = 'equipment' | 'skills' | 'heroes'
-export type SecondaryView = null | 'weapon' | 'merge'
+export type SecondaryView = null | 'weapon' | 'equipment' | 'merge'
 
 export interface MonsterState {
   name: string
@@ -67,6 +69,10 @@ export interface GameState {
   pendingTransition: PendingMonsterTransition | null
   combatGraceRemaining: number
   gold: number
+  diamonds: number
+  equipmentCatalog: EquipmentConfig[]
+  equipmentConfigError: string | null
+  ownedEquipment: Record<number, number>
   mainHero: MainHero
   heroes: Hero[]
   deployedSlots: (string | null)[]
@@ -87,6 +93,7 @@ export interface GameState {
   equippedWeapon: Weapon
   weaponInventory: Weapon[]
   selectedWeaponId: string | null
+  equipmentPickerType: number | null
   dialog: DialogConfig | null
 }
 
@@ -116,6 +123,7 @@ type GameAction =
   | { type: 'CLOSE_TAB_PANEL' }
   | { type: 'OPEN_WEAPON_PICKER' }
   | { type: 'OPEN_MERGE_VIEW' }
+  | { type: 'OPEN_EQUIPMENT_PICKER'; equipmentType: number }
   | { type: 'CLOSE_SECONDARY_VIEW' }
   | { type: 'OPEN_HERO_OVERLAY' }
   | { type: 'CLOSE_HERO_OVERLAY' }
@@ -126,6 +134,11 @@ type GameAction =
   | { type: 'MONSTER_DEATH_COMPLETE' }
   | { type: 'MONSTER_SPAWN_COMPLETE' }
   | { type: 'HIDE_DIALOG' }
+  | { type: 'LOAD_EQUIPMENT'; equipment: EquipmentConfig[] }
+  | { type: 'EQUIPMENT_CONFIG_ERROR'; message: string }
+  | { type: 'SYNC_MERGE_RESOURCES'; gold: number; diamonds: number }
+  | { type: 'GRANT_EQUIPMENT'; item: EquipmentConfig; quantity: number }
+  | { type: 'BUY_EQUIPMENT'; item: EquipmentConfig }
 
 const initialMonster = createMonster(1, 0, false)
 
@@ -139,9 +152,13 @@ const initialState: GameState = {
   monsterPhase: 'fighting',
   pendingTransition: null,
   combatGraceRemaining: 0,
-  gold: 0,
+  gold: 2000,
+  diamonds: 500,
+  equipmentCatalog: [],
+  equipmentConfigError: null,
+  ownedEquipment: { 100010001: 1, 100020001: 1 },
   mainHero: INITIAL_MAIN_HERO,
-  heroes: INITIAL_HEROES,
+  heroes: INITIAL_HEROES.map((hero) => ({ ...hero, level: 0 })),
   deployedSlots: createEmptyDeployedSlots(),
   toast: null,
   showBossFailModal: false,
@@ -160,6 +177,7 @@ const initialState: GameState = {
   equippedWeapon: EQUIPPED_WEAPON_DEFAULT,
   weaponInventory: INITIAL_WEAPON_INVENTORY,
   selectedWeaponId: null,
+  equipmentPickerType: null,
   dialog: null,
 }
 
@@ -216,19 +234,6 @@ function computeNextAfterKill(state: GameState): PendingMonsterTransition & { go
     }
   }
 
-  if (state.bossFailed) {
-    return {
-      gold,
-      stage: state.stage,
-      killCount: state.killCount,
-      isBoss: false,
-      bossFailed: state.bossFailed,
-      bossTimer: state.bossTimer,
-      monster: createRandomNormalMonster(state.stage),
-      toast: null,
-    }
-  }
-
   const newKillCount = state.killCount + 1
 
   if (newKillCount >= 10) {
@@ -276,10 +281,11 @@ function handleBossTimeout(state: GameState): GameState {
   return {
     ...state,
     isBoss: false,
-    bossFailed: true,
+    killCount: 0,
+    bossFailed: false,
     bossTimer: 30,
     showBossFailModal: true,
-    monster: createRandomNormalMonster(state.stage),
+    monster: createMonster(state.stage, 0, false),
     monsterPhase: 'spawning',
     pendingTransition: null,
   }
@@ -434,7 +440,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'CHALLENGE_BOSS':
-      if (!state.bossFailed || state.killCount < 10) return state
+      if (!state.bossFailed) return state
       return {
         ...state,
         isBoss: true,
@@ -451,12 +457,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         isBoss: false,
+        killCount: 0,
         bossFailed: true,
         bossTimer: 30,
-        monster: createRandomNormalMonster(state.stage),
+        monster: createMonster(state.stage, 0, false),
         monsterPhase: 'spawning',
         pendingTransition: null,
-        toast: '已暂时撤退，可随时挑战 Boss',
+        toast: '已暂时撤退，可刷普通怪物或随时重返 Boss',
       }
 
     case 'DISMISS_BOSS_FAIL':
@@ -573,11 +580,20 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         dialog: null,
       }
 
+    case 'OPEN_EQUIPMENT_PICKER':
+      return {
+        ...state,
+        secondaryView: 'equipment',
+        equipmentPickerType: action.equipmentType,
+        showHeroOverlay: false,
+      }
+
     case 'CLOSE_SECONDARY_VIEW':
       return {
         ...state,
         secondaryView: null,
         selectedWeaponId: null,
+        equipmentPickerType: null,
         combatGraceRemaining: COMBAT_RESUME_GRACE_SEC,
       }
 
@@ -605,6 +621,50 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case 'HIDE_DIALOG':
       return { ...state, dialog: null }
+
+    case 'LOAD_EQUIPMENT':
+      return { ...state, equipmentCatalog: action.equipment, equipmentConfigError: null }
+
+    case 'EQUIPMENT_CONFIG_ERROR':
+      return { ...state, equipmentConfigError: action.message }
+
+    case 'SYNC_MERGE_RESOURCES':
+      return { ...state, gold: action.gold, diamonds: action.diamonds }
+
+    case 'GRANT_EQUIPMENT': {
+      const ownedEquipment = {
+        ...state.ownedEquipment,
+        [action.item.id]: (state.ownedEquipment[action.item.id] ?? 0) + action.quantity,
+      }
+      if (action.item.type === 9) {
+        const heroIndex = action.item.id - 100030001
+        const hero = state.heroes[heroIndex]
+        if (!hero) return { ...state, ownedEquipment }
+        return {
+          ...state,
+          ownedEquipment,
+          heroes: state.heroes.map((entry, index) => index === heroIndex
+            ? { ...entry, level: Math.max(1, entry.level) }
+            : entry),
+        }
+      }
+      if (action.item.type === 8) {
+        return {
+          ...state,
+          ownedEquipment,
+          skillLevels: { ...state.skillLevels, heroic_slash: 1 },
+        }
+      }
+      return { ...state, ownedEquipment }
+    }
+
+    case 'BUY_EQUIPMENT': {
+      const cost = action.item.diamond
+      if (cost === null) return { ...state, toast: '该物品不能使用钻石购买' }
+      if (state.diamonds < cost) return { ...state, toast: '钻石不足' }
+      const granted = gameReducer(state, { type: 'GRANT_EQUIPMENT', item: action.item, quantity: 1 })
+      return { ...granted, diamonds: state.diamonds - cost, toast: `获得 ${action.item.name}` }
+    }
 
     default:
       return state
@@ -636,6 +696,7 @@ interface GameContextValue {
   closeTabPanel: () => void
   openWeaponPicker: () => void
   openMergeView: () => void
+  openEquipmentPicker: (equipmentType: number) => void
   closeSecondaryView: () => void
   closeHeroOverlay: () => void
   selectWeaponInPicker: (weaponId: string) => void
@@ -648,6 +709,9 @@ interface GameContextValue {
   cancelDialog: () => void
   completeMonsterDeath: () => void
   completeMonsterSpawn: () => void
+  syncMergeResources: (gold: number, diamonds: number) => void
+  grantEquipment: (equipmentId: number, quantity: number) => void
+  buyEquipment: (equipmentId: number) => void
 }
 
 const GameContext = createContext<GameContextValue | null>(null)
@@ -656,6 +720,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(gameReducer, initialState)
   const onConfirmRef = useRef<(() => void) | null>(null)
   const onCancelRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    let active = true
+    loadEquipmentConfig()
+      .then((equipment) => active && dispatch({ type: 'LOAD_EQUIPMENT', equipment }))
+      .catch((error: unknown) => active && dispatch({
+        type: 'EQUIPMENT_CONFIG_ERROR',
+        message: error instanceof Error ? error.message : '装备配置加载失败',
+      }))
+    return () => { active = false }
+  }, [])
 
   const equippedWeapon = state.equippedWeapon
   const totalDps = useMemo(() => getTotalDps(state), [state])
@@ -695,6 +770,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const closeTabPanel = useCallback(() => dispatch({ type: 'CLOSE_TAB_PANEL' }), [])
   const openWeaponPicker = useCallback(() => dispatch({ type: 'OPEN_WEAPON_PICKER' }), [])
   const openMergeView = useCallback(() => dispatch({ type: 'OPEN_MERGE_VIEW' }), [])
+  const openEquipmentPicker = useCallback(
+    (equipmentType: number) => dispatch({ type: 'OPEN_EQUIPMENT_PICKER', equipmentType }),
+    [],
+  )
   const closeSecondaryView = useCallback(() => dispatch({ type: 'CLOSE_SECONDARY_VIEW' }), [])
   const closeHeroOverlay = useCallback(() => dispatch({ type: 'CLOSE_HERO_OVERLAY' }), [])
   const selectWeaponInPicker = useCallback(
@@ -706,6 +785,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
     [],
   )
   const showToast = useCallback((message: string) => dispatch({ type: 'SHOW_TOAST', message }), [])
+  const syncMergeResources = useCallback(
+    (gold: number, diamonds: number) => dispatch({ type: 'SYNC_MERGE_RESOURCES', gold, diamonds }),
+    [],
+  )
+  const grantEquipment = useCallback((equipmentId: number, quantity: number) => {
+    const item = state.equipmentCatalog.find((entry) => entry.id === equipmentId)
+    if (item) dispatch({ type: 'GRANT_EQUIPMENT', item, quantity })
+  }, [state.equipmentCatalog])
+  const buyEquipment = useCallback((equipmentId: number) => {
+    const item = state.equipmentCatalog.find((entry) => entry.id === equipmentId)
+    if (item) dispatch({ type: 'BUY_EQUIPMENT', item })
+  }, [state.equipmentCatalog])
 
   const confirmDialog = useCallback(() => {
     onConfirmRef.current?.()
@@ -788,6 +879,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       closeTabPanel,
       openWeaponPicker,
       openMergeView,
+      openEquipmentPicker,
       closeSecondaryView,
       closeHeroOverlay,
       selectWeaponInPicker,
@@ -800,6 +892,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       cancelDialog,
       completeMonsterDeath,
       completeMonsterSpawn,
+      syncMergeResources,
+      grantEquipment,
+      buyEquipment,
     }),
     [
       state,
@@ -826,6 +921,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       closeTabPanel,
       openWeaponPicker,
       openMergeView,
+      openEquipmentPicker,
       closeSecondaryView,
       closeHeroOverlay,
       selectWeaponInPicker,
@@ -838,6 +934,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       cancelDialog,
       completeMonsterDeath,
       completeMonsterSpawn,
+      syncMergeResources,
+      grantEquipment,
+      buyEquipment,
     ],
   )
 
