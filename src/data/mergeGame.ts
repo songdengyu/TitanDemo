@@ -9,6 +9,14 @@ export interface MergeOrderState {
   leaving: boolean
 }
 
+export interface MergeEffect {
+  id: number
+  kind: 'order-reward' | 'gold-gain' | 'gold-spend' | 'merge'
+  sourceIndex: number
+  amount?: number
+  equipmentType?: number
+}
+
 export interface MergeGameState {
   board: MergeCell[]
   warehouse: number[]
@@ -22,6 +30,7 @@ export interface MergeGameState {
   message: string | null
   animationKey: number
   spawnedCell: number | null
+  effects: MergeEffect[]
 }
 
 export type MergeGameAction =
@@ -35,6 +44,7 @@ export type MergeGameAction =
   | { type: 'PLACE_WAREHOUSE'; warehouseIndex: number; cellIndex: number | null }
   | { type: 'EXPAND_WAREHOUSE' }
   | { type: 'CLEAR_MESSAGE' }
+  | { type: 'CLEAR_EFFECT'; id: number }
 
 export const WAREHOUSE_EXPANSION_COSTS = [50, 100, 200, 400, 800, 1600]
 
@@ -59,6 +69,7 @@ export function createMergeGameState(config: MergeConfig): MergeGameState {
     message: null,
     animationKey: 0,
     spawnedCell: null,
+    effects: [],
   }
 }
 
@@ -75,17 +86,28 @@ function adjacentIndexes(index: number) {
 
 function revealNeighbors(board: MergeCell[], unlockedIndex: number) {
   let reward = 0
+  const revealedIndexes: number[] = []
   const next = board.map((cell) => ({ ...cell }))
   adjacentIndexes(unlockedIndex).forEach((index) => {
     const cell = next[index]
     if (cell.lock !== 2) return
     cell.lock = 1
+    revealedIndexes.push(index)
     if (!cell.rewardClaimed) {
       cell.rewardClaimed = true
       reward += 100
     }
   })
-  return { board: next, reward }
+  return { board: next, reward, revealedIndexes }
+}
+
+function createCellGoldEffects(state: MergeGameState, indexes: number[], amount: number): MergeEffect[] {
+  return indexes.map((sourceIndex, offset) => ({
+    id: state.animationKey + offset + 1,
+    kind: 'gold-gain',
+    sourceIndex,
+    amount,
+  }))
 }
 
 function weightedDrop(item: MergeItemConfig): number | null {
@@ -170,9 +192,33 @@ export function createMergeReducer(config: MergeConfig) {
               message: revealed.reward ? `合成成功，探索奖励 +${revealed.reward} 金币` : '合成成功',
               animationKey: state.animationKey + 1,
               spawnedCell: null,
+              effects: [
+                {
+                  id: state.animationKey + 1,
+                  kind: 'merge',
+                  sourceIndex: action.to,
+                },
+                ...createCellGoldEffects(
+                  { ...state, animationKey: state.animationKey + 1 },
+                  revealed.revealedIndexes,
+                  100,
+                ),
+              ],
             }
           }
-          return { ...state, board, selectedCell: action.to, message: '合成成功', animationKey: state.animationKey + 1, spawnedCell: null }
+          return {
+            ...state,
+            board,
+            selectedCell: action.to,
+            message: '合成成功',
+            animationKey: state.animationKey + 1,
+            spawnedCell: null,
+            effects: [{
+              id: state.animationKey + 1,
+              kind: 'merge',
+              sourceIndex: action.to,
+            }],
+          }
         }
         if (target.lock !== 0) return { ...state, message: '半锁棋子需要相同棋子合成解锁' }
         board[action.from].itemId = target.itemId
@@ -196,6 +242,14 @@ export function createMergeReducer(config: MergeConfig) {
             message: `领取棋子奖励 +${100 + revealed.reward} 金币`,
             animationKey: state.animationKey + 1,
             spawnedCell: null,
+            effects: [
+              ...createCellGoldEffects(state, [action.index], 100),
+              ...createCellGoldEffects(
+                { ...state, animationKey: state.animationKey + 1 },
+                revealed.revealedIndexes,
+                100,
+              ),
+            ],
           }
         }
         if (item.itemType !== 'generator') return state
@@ -231,6 +285,12 @@ export function createMergeReducer(config: MergeConfig) {
             : `生成了 ${config.itemById.get(dropId)?.name ?? '新棋子'}`,
           animationKey: state.animationKey + 1,
           spawnedCell: targetIndex,
+          effects: [{
+            id: state.animationKey + 1,
+            kind: 'gold-spend',
+            sourceIndex: action.index,
+            amount: item.openCost,
+          }],
         }
       }
       case 'COMPLETE_ORDER': {
@@ -247,6 +307,12 @@ export function createMergeReducer(config: MergeConfig) {
           message: `订单完成，获得装备 ${order.equipmentId} ×${order.quantity}`,
           animationKey: state.animationKey + 1,
           spawnedCell: null,
+          effects: [{
+            id: state.animationKey + 1,
+            kind: 'order-reward',
+            sourceIndex: action.slot,
+            equipmentType: config.equipment.get(order.equipmentId)?.type,
+          }],
         }
       }
       case 'FINISH_ORDER_LEAVE': {
@@ -316,6 +382,8 @@ export function createMergeReducer(config: MergeConfig) {
       }
       case 'CLEAR_MESSAGE':
         return { ...state, message: null }
+      case 'CLEAR_EFFECT':
+        return { ...state, effects: state.effects.filter((effect) => effect.id !== action.id) }
       default:
         return state
     }

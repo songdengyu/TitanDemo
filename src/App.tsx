@@ -23,11 +23,11 @@ function GameApp() {
           {state.tabPanelOpen && <MainPanel />}
           <BottomTabBar />
         </div>
-        <Toast />
         <BossFailModal />
         {state.secondaryView === 'weapon' && <WeaponPickerPanel />}
         {state.secondaryView === 'merge' && <MergeGameScreen />}
         <GameDialog />
+        <Toast />
       </div>
     </div>
   )

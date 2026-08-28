@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type PointerEvent } from 'react'
-import { createMergeGameState, createMergeReducer, canCompleteOrder, isHighestGeneratorOnBoard, WAREHOUSE_EXPANSION_COSTS } from '../data/mergeGame'
+import { createMergeGameState, createMergeReducer, canCompleteOrder, isHighestGeneratorOnBoard, WAREHOUSE_EXPANSION_COSTS, type MergeEffect } from '../data/mergeGame'
 import { loadMergeConfig, type MergeConfig } from '../data/mergeConfig'
 import { useGameStore } from '../store/useGameStore'
 import { CharacterAvatar } from './CharacterAvatar'
@@ -7,6 +7,17 @@ import { MergePiece } from './MergePiece'
 import styles from './MergeGameScreen.module.css'
 
 const ORDER_ROLES = ['archer', 'mage', 'knight', 'rogue', 'priest', 'sword'] as const
+const EQUIPMENT_EFFECTS: Record<number, { symbol: string; label: string; className: string }> = {
+  1: { symbol: '†', label: '武器', className: 'weaponReward' },
+  2: { symbol: '‡', label: '副武器', className: 'offhandReward' },
+  3: { symbol: '⌒', label: '头盔', className: 'helmetReward' },
+  4: { symbol: '♜', label: '衣服', className: 'armorReward' },
+  5: { symbol: '═', label: '腰带', className: 'beltReward' },
+  6: { symbol: '⌟', label: '鞋子', className: 'bootsReward' },
+  7: { symbol: '✦', label: '神器', className: 'artifactReward' },
+  8: { symbol: '▤', label: '技能书', className: 'bookReward' },
+  9: { symbol: '♟', label: '队友', className: 'heroReward' },
+}
 
 interface DragState {
   source: number
@@ -34,8 +45,20 @@ interface WarehouseDragVisual {
   y: number
 }
 
+function GoldEffect({ effect, clear }: { effect: MergeEffect; clear: () => void }) {
+  return (
+    <span
+      className={`${styles.goldEffect} ${effect.kind === 'gold-spend' ? styles.goldSpendEffect : styles.goldGainEffect}`}
+      onAnimationEnd={clear}
+    >
+      <span className={styles.effectCoin}>●</span>
+      <strong>{effect.kind === 'gold-spend' ? '-' : '+'}{effect.amount}</strong>
+    </span>
+  )
+}
+
 function MergeGame({ config }: { config: MergeConfig }) {
-  const { closeSecondaryView } = useGameStore()
+  const { closeSecondaryView, showToast } = useGameStore()
   const reducer = useMemo(() => createMergeReducer(config), [config])
   const [state, dispatch] = useReducer(reducer, config, createMergeGameState)
   const [warehouseOpen, setWarehouseOpen] = useState(false)
@@ -78,9 +101,9 @@ function MergeGame({ config }: { config: MergeConfig }) {
 
   useEffect(() => {
     if (!state.message) return
-    const timer = window.setTimeout(() => dispatch({ type: 'CLEAR_MESSAGE' }), 1800)
-    return () => window.clearTimeout(timer)
-  }, [state.message])
+    showToast(state.message)
+    dispatch({ type: 'CLEAR_MESSAGE' })
+  }, [state.message, showToast])
 
   const selectedItem = state.selectedCell !== null
     ? config.itemById.get(state.board[state.selectedCell]?.itemId ?? -1)
@@ -194,14 +217,16 @@ function MergeGame({ config }: { config: MergeConfig }) {
           <span className={styles.brandMark}>M</span>
           <div><strong>秘境合成</strong><small>MERGE WORKSHOP</small></div>
         </div>
-        <div className={styles.currency}><span>●</span>{state.gold}</div>
-        <div className={`${styles.currency} ${styles.gems}`}><span>◆</span>{state.gems}</div>
+        <div className={styles.currency}><span className={styles.headerCoin}>●</span><strong>{state.gold}</strong></div>
+        <div className={`${styles.currency} ${styles.gems}`}><span className={styles.headerGem}>◆</span><strong>{state.gems}</strong></div>
       </header>
 
       <section className={styles.orders} aria-label="订单">
         {state.activeOrders.map((orderState, slot) => {
           const order = config.orders[orderState.configIndex]
           const ready = canCompleteOrder(state, order)
+          const equipment = config.equipment.get(order.equipmentId)
+          const reward = EQUIPMENT_EFFECTS[equipment?.type ?? 1] ?? EQUIPMENT_EFFECTS[1]
           return (
             <article
               key={order.id}
@@ -210,20 +235,46 @@ function MergeGame({ config }: { config: MergeConfig }) {
             >
               <CharacterAvatar role={ORDER_ROLES[order.id % ORDER_ROLES.length]} size="sm" />
               <div className={styles.orderNeeds}>
+                <span className={styles.orderNeedsLabel}>需求：</span>
                 {order.requirements.map((itemId, requirementIndex) => (
                   <MergePiece key={`${itemId}-${requirementIndex}`} item={config.itemById.get(itemId)!} compact />
                 ))}
               </div>
-              <button type="button" disabled={!ready || orderState.leaving} onClick={() => finishOrder(slot)}>
+              <div
+                className={`${styles.orderRewardPreview} ${styles[reward.className]}`}
+                title={`${reward.label} ×${order.quantity}`}
+                aria-label={`订单奖励：${reward.label}，数量 ${order.quantity}`}
+              >
+                <small className={styles.rewardLabel}>奖励</small>
+                <span>{reward.symbol}</span>
+                {order.quantity > 1 && <strong>×{order.quantity}</strong>}
+              </div>
+              <button
+                type="button"
+                className={ready && !orderState.leaving ? styles.orderReadyButton : ''}
+                disabled={!ready || orderState.leaving}
+                onClick={() => finishOrder(slot)}
+              >
                 {ready ? '交付' : '收集'}
               </button>
             </article>
           )
         })}
-      </section>
-
-      <section className={styles.noticeArea} aria-live="polite">
-        {state.message && <div className={styles.message}>{state.message}</div>}
+        {state.effects.filter((effect) => effect.kind === 'order-reward').map((effect) => {
+          const reward = EQUIPMENT_EFFECTS[effect.equipmentType ?? 1] ?? EQUIPMENT_EFFECTS[1]
+          return (
+            <span
+              key={effect.id}
+              className={`${styles.orderRewardEffect} ${styles[reward.className]}`}
+              style={{ '--order-slot': effect.sourceIndex } as React.CSSProperties}
+              onAnimationEnd={() => dispatch({ type: 'CLEAR_EFFECT', id: effect.id })}
+            >
+              <span className={styles.rewardBurst} />
+              <span className={styles.rewardIcon}>{reward.symbol}</span>
+              <strong>{reward.label}</strong>
+            </span>
+          )
+        })}
       </section>
 
       <main className={styles.boardWrap}>
@@ -236,6 +287,12 @@ function MergeGame({ config }: { config: MergeConfig }) {
             const validDropTarget = isDropTarget && isValidDrop(dragVisual.source, index)
             const activeGenerator = item?.itemType === 'generator'
               && isHighestGeneratorOnBoard(state, config, index)
+            const goldEffects = state.effects.filter(
+              (effect) => (effect.kind === 'gold-gain' || effect.kind === 'gold-spend') && effect.sourceIndex === index,
+            )
+            const mergeEffects = state.effects.filter(
+              (effect) => effect.kind === 'merge' && effect.sourceIndex === index,
+            )
             return (
               <button
                 key={index}
@@ -269,6 +326,30 @@ function MergeGame({ config }: { config: MergeConfig }) {
                     <span>{item.openCost}</span>
                   </span>
                 )}
+                {goldEffects.map((effect) => (
+                  <GoldEffect
+                    key={effect.id}
+                    effect={effect}
+                    clear={() => dispatch({ type: 'CLEAR_EFFECT', id: effect.id })}
+                  />
+                ))}
+                {mergeEffects.map((effect) => (
+                  <span
+                    key={effect.id}
+                    className={styles.mergeEffect}
+                    onAnimationEnd={() => dispatch({ type: 'CLEAR_EFFECT', id: effect.id })}
+                    aria-hidden
+                  >
+                    <span className={styles.mergeRing} />
+                    <span className={styles.mergeFlash}>✦</span>
+                    <span className={`${styles.mergeSpark} ${styles.spark1}`} />
+                    <span className={`${styles.mergeSpark} ${styles.spark2}`} />
+                    <span className={`${styles.mergeSpark} ${styles.spark3}`} />
+                    <span className={`${styles.mergeSpark} ${styles.spark4}`} />
+                    <span className={`${styles.mergeSpark} ${styles.spark5}`} />
+                    <span className={`${styles.mergeSpark} ${styles.spark6}`} />
+                  </span>
+                ))}
               </button>
             )
           })}
