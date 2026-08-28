@@ -26,14 +26,55 @@ interface DragVisual {
   returning: boolean
 }
 
+interface WarehouseDragVisual {
+  warehouseIndex: number
+  itemId: number
+  pointerId: number
+  x: number
+  y: number
+}
+
 function MergeGame({ config }: { config: MergeConfig }) {
   const { closeSecondaryView } = useGameStore()
   const reducer = useMemo(() => createMergeReducer(config), [config])
   const [state, dispatch] = useReducer(reducer, config, createMergeGameState)
   const [warehouseOpen, setWarehouseOpen] = useState(false)
+  const [warehouseDrag, setWarehouseDrag] = useState<WarehouseDragVisual | null>(null)
   const [dragVisual, setDragVisual] = useState<DragVisual | null>(null)
   const [dragTarget, setDragTarget] = useState<number | null>(null)
   const dragRef = useRef<DragState | null>(null)
+
+  useEffect(() => {
+    if (!warehouseDrag) return
+
+    function move(event: globalThis.PointerEvent) {
+      if (event.pointerId !== warehouseDrag!.pointerId) return
+      event.preventDefault()
+      setWarehouseDrag((current) => current ? { ...current, x: event.clientX, y: event.clientY } : current)
+    }
+
+    function finish(event: globalThis.PointerEvent) {
+      if (event.pointerId !== warehouseDrag!.pointerId) return
+      const targetElement = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-cell-index]')
+      const parsedIndex = Number(targetElement?.dataset.cellIndex)
+      dispatch({
+        type: 'PLACE_WAREHOUSE',
+        warehouseIndex: warehouseDrag!.warehouseIndex,
+        cellIndex: Number.isInteger(parsedIndex) ? parsedIndex : null,
+      })
+      setWarehouseDrag(null)
+      setWarehouseOpen(true)
+    }
+
+    window.addEventListener('pointermove', move, { passive: false })
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+    }
+  }, [warehouseDrag])
 
   useEffect(() => {
     if (!state.message) return
@@ -130,6 +171,19 @@ function MergeGame({ config }: { config: MergeConfig }) {
     if (wasDragging) returnDraggedPiece()
   }
 
+  function startWarehouseDrag(event: PointerEvent<HTMLButtonElement>, warehouseIndex: number, itemId: number) {
+    event.preventDefault()
+    dispatch({ type: 'SELECT_WAREHOUSE', index: warehouseIndex })
+    setWarehouseDrag({
+      warehouseIndex,
+      itemId,
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    })
+    setWarehouseOpen(false)
+  }
+
   const expansionIndex = (state.warehouseCapacity - 6) / 3
   const expansionCost = WAREHOUSE_EXPANSION_COSTS[expansionIndex]
 
@@ -168,6 +222,10 @@ function MergeGame({ config }: { config: MergeConfig }) {
         })}
       </section>
 
+      <section className={styles.noticeArea} aria-live="polite">
+        {state.message && <div className={styles.message}>{state.message}</div>}
+      </section>
+
       <main className={styles.boardWrap}>
         <div className={styles.board}>
           {state.board.map((cell, index) => {
@@ -184,9 +242,6 @@ function MergeGame({ config }: { config: MergeConfig }) {
                 type="button"
                 data-cell-index={index}
                 className={`${styles.cell} ${styles[`lock${cell.lock}`]} ${selected ? styles.cellSelected : ''} ${activeGenerator ? styles.activeGenerator : ''} ${isDropTarget ? (validDropTarget ? styles.validDrop : styles.invalidDrop) : ''}`}
-                onClick={() => {
-                  if (state.selectedWarehouse !== null) dispatch({ type: 'PLACE_WAREHOUSE', cellIndex: index })
-                }}
                 onDoubleClick={() => dispatch({ type: 'USE_CELL', index })}
                 onPointerDown={(event) => onPointerDown(event, index)}
                 onPointerMove={onPointerMove}
@@ -230,6 +285,15 @@ function MergeGame({ config }: { config: MergeConfig }) {
         </div>
       )}
 
+      {warehouseDrag && (
+        <div
+          className={`${styles.dragPiece} ${styles.warehouseDragPiece}`}
+          style={{ left: warehouseDrag.x, top: warehouseDrag.y }}
+        >
+          <MergePiece item={config.itemById.get(warehouseDrag.itemId)!} />
+        </div>
+      )}
+
       <section className={styles.info}>
         <div>
           <span className={styles.infoLabel}>棋子说明</span>
@@ -246,12 +310,10 @@ function MergeGame({ config }: { config: MergeConfig }) {
         <button type="button" className={styles.returnBtn} onClick={closeSecondaryView}><span>↩</span>返回战斗</button>
       </nav>
 
-      {state.message && <div className={styles.message}>{state.message}</div>}
-
       {warehouseOpen && (
         <div className={styles.warehouseBackdrop} onClick={() => setWarehouseOpen(false)}>
           <section className={styles.warehouse} onClick={(event) => event.stopPropagation()}>
-            <header><div><h2>秘境仓库</h2><small>点击棋子后，再点击棋盘空格取回</small></div><button type="button" onClick={() => setWarehouseOpen(false)}>×</button></header>
+            <header><div><h2>秘境仓库</h2><small>拖动棋子到棋盘已解锁空格取回</small></div><button type="button" onClick={() => setWarehouseOpen(false)}>×</button></header>
             <div className={styles.warehouseGrid}>
               {Array.from({ length: state.warehouseCapacity }, (_, index) => {
                 const item = config.itemById.get(state.warehouse[index] ?? -1)
@@ -260,7 +322,7 @@ function MergeGame({ config }: { config: MergeConfig }) {
                     key={index}
                     type="button"
                     className={state.selectedWarehouse === index ? styles.warehouseSelected : ''}
-                    onClick={() => item && dispatch({ type: 'SELECT_WAREHOUSE', index })}
+                    onPointerDown={(event) => item && startWarehouseDrag(event, index, item.id)}
                   >
                     {item && <MergePiece item={item} compact />}
                   </button>

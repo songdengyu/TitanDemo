@@ -32,7 +32,7 @@ export type MergeGameAction =
   | { type: 'FINISH_ORDER_LEAVE'; slot: number }
   | { type: 'STORE_CELL'; index: number }
   | { type: 'SELECT_WAREHOUSE'; index: number }
-  | { type: 'PLACE_WAREHOUSE'; cellIndex: number }
+  | { type: 'PLACE_WAREHOUSE'; warehouseIndex: number; cellIndex: number | null }
   | { type: 'EXPAND_WAREHOUSE' }
   | { type: 'CLEAR_MESSAGE' }
 
@@ -238,15 +238,13 @@ export function createMergeReducer(config: MergeConfig) {
         if (!orderState || orderState.leaving) return state
         const order = config.orders[orderState.configIndex]
         if (!canCompleteOrder(state, order)) return { ...state, message: '订单所需棋子不足' }
-        const reward = config.rewards.get(order.rewardId)!.gold * order.quantity
         const activeOrders = state.activeOrders.map((entry, index) => index === action.slot ? { ...entry, leaving: true } : entry)
         return {
           ...state,
           board: removeRequirements(state.board, order.requirements),
           activeOrders,
-          gold: state.gold + reward,
           selectedCell: null,
-          message: `订单完成 +${reward} 金币`,
+          message: `订单完成，获得装备 ${order.equipmentId} ×${order.quantity}`,
           animationKey: state.animationKey + 1,
           spawnedCell: null,
         }
@@ -282,19 +280,26 @@ export function createMergeReducer(config: MergeConfig) {
         if (!state.warehouse[action.index]) return state
         return { ...state, selectedWarehouse: action.index, selectedCell: null }
       case 'PLACE_WAREHOUSE': {
-        if (state.selectedWarehouse === null) return state
+        const itemId = state.warehouse[action.warehouseIndex]
+        if (!itemId) return { ...state, selectedWarehouse: null, message: '取回失败：仓库棋子不存在' }
+        if (action.cellIndex === null) {
+          return { ...state, selectedWarehouse: null, message: '取回失败：请拖到棋盘空格' }
+        }
         const cell = state.board[action.cellIndex]
-        if (!cell || cell.lock !== 0 || cell.itemId !== null) return { ...state, message: '请选择已解锁的空格' }
-        const itemId = state.warehouse[state.selectedWarehouse]
-        if (!itemId) return state
+        if (!cell || cell.lock !== 0 || cell.itemId !== null) {
+          return { ...state, selectedWarehouse: null, message: '取回失败：目标必须是已解锁空格' }
+        }
         const board = state.board.map((entry) => ({ ...entry }))
         board[action.cellIndex].itemId = itemId
         return {
           ...state,
           board,
-          warehouse: state.warehouse.filter((_, index) => index !== state.selectedWarehouse),
+          warehouse: state.warehouse.filter((_, index) => index !== action.warehouseIndex),
           selectedWarehouse: null,
-          message: '已取回棋子',
+          selectedCell: action.cellIndex,
+          message: `取回成功：${config.itemById.get(itemId)?.name ?? '棋子'} 已放入棋盘`,
+          animationKey: state.animationKey + 1,
+          spawnedCell: action.cellIndex,
         }
       }
       case 'EXPAND_WAREHOUSE': {

@@ -20,13 +20,22 @@ export interface MergeOrderConfig {
   id: number
   maxConcurrent: number
   requirements: number[]
-  rewardId: number
+  equipmentId: number
   quantity: number
 }
 
-export interface MergeRewardConfig {
+export interface EquipmentConfig {
   id: number
-  gold: number
+  type: number
+  attack: number | null
+  attackBonus: number | null
+  critRate: number | null
+  critDamage: number | null
+  damageBonus: number | null
+  normalAttackDamage: number | null
+  skillDamage: number | null
+  power: number | null
+  icon: string
 }
 
 export interface InitialMergeCell {
@@ -38,7 +47,7 @@ export interface MergeConfig {
   items: MergeItemConfig[]
   itemById: Map<number, MergeItemConfig>
   orders: MergeOrderConfig[]
-  rewards: Map<number, MergeRewardConfig>
+  equipment: Map<number, EquipmentConfig>
   initialBoard: InitialMergeCell[]
   initialGold: number
   initialGems: number
@@ -129,7 +138,7 @@ function parseOrders(text: string, itemById: Map<number, MergeItemConfig>): Merg
       id,
       maxConcurrent: Math.min(3, integer(required(row, 'max_concurrent', `订单 ${id}`), `订单 ${id} 并存数`)),
       requirements,
-      rewardId: integer(required(row, 'reward_id', `订单 ${id}`), `订单 ${id} 奖励ID`),
+      equipmentId: integer(required(row, 'equipment_id', `订单 ${id}`), `订单 ${id} 装备ID`),
       quantity: integer(required(row, 'quantity', `订单 ${id}`), `订单 ${id} 数量`),
     }
   })
@@ -139,13 +148,30 @@ function parseOrders(text: string, itemById: Map<number, MergeItemConfig>): Merg
   return orders
 }
 
-function parseRewards(text: string): Map<number, MergeRewardConfig> {
+function optionalNumber(value: string, label: string): number | null {
+  if (!value) return null
+  const normalized = value.endsWith('%') ? String(Number(value.slice(0, -1)) / 100) : value
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) throw new Error(`${label} 不是有效数值: ${value}`)
+  return parsed
+}
+
+function parseEquipment(text: string): Map<number, EquipmentConfig> {
   return new Map(parseCsv(text).map((row) => {
-    const reward = {
-      id: integer(required(row, 'reward_id', '奖励配置'), 'reward_id'),
-      gold: integer(required(row, 'gold', '奖励配置'), '奖励金币'),
+    const equipment = {
+      id: integer(required(row, 'equipment_id', '装备配置'), 'equipment_id'),
+      type: integer(required(row, 'equipment_type', '装备配置'), 'equipment_type'),
+      attack: optionalNumber(row.attack, 'attack'),
+      attackBonus: optionalNumber(row.attack_bonus, 'attack_bonus'),
+      critRate: optionalNumber(row.crit_rate, 'crit_rate'),
+      critDamage: optionalNumber(row.crit_damage, 'crit_damage'),
+      damageBonus: optionalNumber(row.damage_bonus, 'damage_bonus'),
+      normalAttackDamage: optionalNumber(row.normal_attack_damage, 'normal_attack_damage'),
+      skillDamage: optionalNumber(row.skill_damage, 'skill_damage'),
+      power: optionalNumber(row.power, 'power'),
+      icon: row.icon,
     }
-    return [reward.id, reward]
+    return [equipment.id, equipment]
   }))
 }
 
@@ -168,24 +194,24 @@ function parseBoard(text: string, itemById: Map<number, MergeItemConfig>) {
 }
 
 export async function loadMergeConfig(): Promise<MergeConfig> {
-  const names = ['items.csv', 'orders.csv', 'rewards.csv', 'initial-board.csv']
+  const names = ['items.csv', 'orders.csv', 'equipment.csv', 'initial-board.csv']
   const responses = await Promise.all(names.map((name) => fetch(`${CONFIG_ROOT}/${name}`)))
   responses.forEach((response, index) => {
     if (!response.ok) throw new Error(`无法加载 ${names[index]} (${response.status})`)
   })
-  const [itemsText, ordersText, rewardsText, boardText] = await Promise.all(responses.map((response) => response.text()))
+  const [itemsText, ordersText, equipmentText, boardText] = await Promise.all(responses.map((response) => response.text()))
   const items = parseItems(itemsText)
   const itemById = validateItems(items)
   const orders = parseOrders(ordersText, itemById)
-  const rewards = parseRewards(rewardsText)
+  const equipment = parseEquipment(equipmentText)
   orders.forEach((order) => {
-    if (!rewards.has(order.rewardId)) throw new Error(`订单 ${order.id} 奖励 ${order.rewardId} 未配置`)
+    if (!equipment.has(order.equipmentId)) throw new Error(`订单 ${order.id} 装备 ${order.equipmentId} 未配置`)
   })
   return {
     items,
     itemById,
     orders,
-    rewards,
+    equipment,
     initialBoard: parseBoard(boardText, itemById),
     initialGold: 2000,
     initialGems: 500,
