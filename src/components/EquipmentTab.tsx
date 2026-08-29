@@ -1,5 +1,6 @@
 import { useGameStore } from '../store/useGameStore'
 import { EquipmentArt } from './EquipmentArt'
+import { EquipmentSlotIcon } from './EquipmentSlotIcon'
 import styles from './EquipmentTab.module.css'
 
 const EQUIPMENT_TYPES = [
@@ -26,13 +27,24 @@ export function EquipmentTab() {
           const items = state.equipmentCatalog.filter((item) => item.type === type.id)
           const owned = items.filter((item) => (state.ownedEquipment[item.id] ?? 0) > 0)
           const equippedId = state.equippedEquipment[type.id]
-          const featured = items.find((item) => item.id === equippedId) ?? items[0]
+          const featured = items.find((item) => item.id === equippedId)
           return (
-            <button key={type.id} type="button" className={styles.equipBtn} onClick={() => openEquipmentPicker(type.id)}>
+            <button
+              key={type.id}
+              type="button"
+              className={`${styles.equipBtn} ${styles[`type${type.id}`]}`}
+              onClick={() => openEquipmentPicker(type.id)}
+              aria-label={type.label}
+            >
               {state.newEquipmentIds.some((id) => items.some((item) => item.id === id)) && <span className={styles.redDot} />}
-              {featured && <EquipmentArt item={featured} size="lg" />}
-              <span className={styles.equipLabel}>{type.label}</span>
-              <span className={styles.equipName}>{equippedId ? featured?.name : owned.length > 0 ? '点击选择装备' : '尚未装备'}</span>
+              <span className={styles.slotArt}>
+                {featured ? (
+                  <EquipmentArt item={featured} size="md" />
+                ) : (
+                  <EquipmentSlotIcon type={type.id} className={styles.slotIcon} />
+                )}
+              </span>
+              <span className={styles.equipName}>{equippedId ? featured?.name : owned.length > 0 ? '点击选择' : '尚未装备'}</span>
             </button>
           )
         })}

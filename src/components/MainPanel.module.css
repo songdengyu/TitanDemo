@@ -1,6 +1,6 @@
 .panel {
   position: absolute;
-  top: 52%;
+  top: calc(52% - 20px);
   right: 0;
   bottom: 56px;
   left: 0;
