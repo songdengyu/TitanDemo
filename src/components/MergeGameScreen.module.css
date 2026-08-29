@@ -40,18 +40,15 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
-  min-height: 162px;
-  padding: 8px 9px 12px;
+  padding: 8px 9px 4px;
   border-bottom: 1px solid rgba(150, 103, 194, 0.3);
   background: rgba(25, 14, 39, 0.72);
 }
 
-.order { position: relative; display: grid; grid-template-columns: 38px minmax(0, 1fr) 36px; grid-template-rows: 40px 38px 38px; gap: 5px; align-items: center; min-width: 0; padding: 7px; border: 1px solid #72578c; border-radius: 9px; background: linear-gradient(145deg, #39264a, #22172f); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3); }
+.order { position: relative; display: grid; grid-template-columns: 38px minmax(0, 1fr) 36px; grid-template-rows: 40px 38px; gap: 5px; align-items: center; min-width: 0; padding: 7px; border: 1px solid #72578c; border-radius: 9px; background: linear-gradient(145deg, #39264a, #22172f); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3); }
 .order > :first-child { grid-column: 1; grid-row: 1; }
 .orderNeeds { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; justify-content: flex-start; gap: 3px; min-width: 0; padding: 2px 1px; }
 .orderNeedsLabel { flex: 0 0 auto; color: #c9b8d2; font: 800 9px/1 var(--font-body); white-space: nowrap; }
-.order button { grid-column: 1 / -1; min-height: 38px; border: 1px solid #8f7130; border-radius: 8px; background: linear-gradient(#e2b94d, #95691c); color: #26180a; font: 800 12px var(--font-body); cursor: pointer; box-shadow: inset 0 1px rgba(255, 244, 175, 0.35); }
-.order button:disabled { border-color: #51455d; background: #302a37; color: #7d7186; }
 .orderRewardPreview {
   position: relative;
   grid-column: 3;
@@ -96,30 +93,18 @@
   text-align: center;
   text-shadow: none;
 }
-.order .orderReadyButton {
-  position: relative;
-  overflow: hidden;
-  border-color: #fff0a0;
-  background: linear-gradient(180deg, #ffe777 0%, #e6ae2e 55%, #a96c16 100%);
-  color: #2a1703;
+.orderReady {
+  cursor: pointer;
+  border-color: #c9a227;
+  background: linear-gradient(160deg, #8b6a2a 0%, #5c4318 48%, #3a2a10 100%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 220, 0.85),
-    0 0 8px rgba(255, 213, 72, 0.8),
-    0 0 15px rgba(255, 176, 31, 0.45);
-  text-shadow: 0 1px rgba(255, 245, 182, 0.65);
-  animation: orderReadyPulse 1.15s ease-in-out infinite;
+    inset 0 0 16px rgba(255, 213, 72, 0.18),
+    0 0 0 1px rgba(255, 224, 138, 0.45),
+    0 0 8px rgba(255, 213, 72, 0.35);
+  animation: orderReadyPulse 1.8s ease-in-out infinite;
 }
-.order .orderReadyButton::after {
-  position: absolute;
-  top: -60%;
-  bottom: -60%;
-  left: -35%;
-  width: 24%;
-  content: '';
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85), transparent);
-  transform: skewX(-18deg);
-  animation: orderReadyShine 1.7s ease-in-out infinite;
-  pointer-events: none;
+.orderReady .orderNeedsLabel {
+  color: #f3e4b4;
 }
 .orderEntering { animation: orderEnter 0.35s ease-out both; }
 .orderLeaving { animation: orderLeave 0.45s ease-in both; pointer-events: none; }
@@ -127,7 +112,7 @@
   position: absolute;
   z-index: 30;
   left: calc((var(--order-slot) + 0.5) * (100% / 3));
-  bottom: 27px;
+  bottom: 8px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -153,8 +138,8 @@
 .heroReward { color: #ff73aa; }
 .orderGoldReward { color: #f0c14b; }
 
-.boardWrap { flex: 1; min-height: 0; display: grid; place-items: center; padding: 8px 9px; }
-.board { width: min(100%, calc((100dvh - 250px) * 7 / 9)); aspect-ratio: 7 / 9; display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(9, 1fr); gap: 3px; padding: 5px; border: 2px solid #735329; border-radius: 10px; background: #161321; box-shadow: inset 0 0 20px #06040a, 0 0 18px rgba(127, 75, 166, 0.28); }
+.boardWrap { flex: 1; min-height: 0; display: grid; justify-items: center; align-content: start; padding: 0 9px 8px; }
+.board { width: min(100%, calc((100dvh - 210px) * 7 / 9)); aspect-ratio: 7 / 9; display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(9, 1fr); gap: 3px; padding: 5px; border: 2px solid #735329; border-radius: 10px; background: #161321; box-shadow: inset 0 0 20px #06040a, 0 0 18px rgba(127, 75, 166, 0.28); }
 .cell { position: relative; display: grid; place-items: center; min-width: 0; min-height: 0; padding: 0; overflow: visible; border: 1px solid #544762; border-radius: 6px; background: linear-gradient(145deg, #32283e, #211b2b); cursor: pointer; touch-action: none; }
 .cellSelected { border-color: #ffe28a; box-shadow: inset 0 0 7px rgba(255, 225, 128, 0.28); }
 .cellPiece { display: grid; place-items: center; width: 100%; height: 100%; }
@@ -322,19 +307,20 @@
 @keyframes orderEnter { from { opacity: 0; transform: translateX(20px) scale(0.9); } }
 @keyframes orderLeave { to { opacity: 0; transform: translateX(-50px) rotate(-7deg) scale(0.72); } }
 @keyframes orderReadyPulse {
-  50% {
-    filter: brightness(1.14);
-    transform: translateY(-1px) scale(1.025);
+  0%, 100% {
+    border-color: #8d6a28;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 220, 0.95),
-      0 0 12px rgba(255, 225, 94, 0.95),
-      0 0 22px rgba(255, 174, 32, 0.6);
+      inset 0 0 16px rgba(255, 213, 72, 0.18),
+      0 0 0 1px rgba(255, 224, 138, 0.18),
+      0 0 4px rgba(255, 213, 72, 0.12);
   }
-}
-@keyframes orderReadyShine {
-  0%, 30% { left: -35%; opacity: 0; }
-  42% { opacity: 1; }
-  72%, 100% { left: 115%; opacity: 0; }
+  50% {
+    border-color: #ffe08a;
+    box-shadow:
+      inset 0 0 16px rgba(255, 213, 72, 0.18),
+      0 0 0 2px rgba(255, 224, 138, 0.85),
+      0 0 14px rgba(255, 213, 72, 0.7);
+  }
 }
 @keyframes rewardLaunch {
   0% { opacity: 0; transform: translate(-50%, 15px) scale(0.25) rotate(-10deg); }

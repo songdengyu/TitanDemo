@@ -268,8 +268,26 @@ function MergeGame({ config }: { config: MergeConfig }) {
           return (
             <article
               key={order.id}
-              className={`${styles.order} ${orderState.leaving ? styles.orderLeaving : styles.orderEntering}`}
-              onAnimationEnd={() => orderState.leaving && dispatch({ type: 'FINISH_ORDER_LEAVE', slot })}
+              className={`${styles.order} ${ready && !orderState.leaving ? styles.orderReady : ''} ${orderState.leaving ? styles.orderLeaving : ready ? '' : styles.orderEntering}`}
+              onAnimationEnd={(event) => {
+                if (orderState.leaving && event.target === event.currentTarget) {
+                  dispatch({ type: 'FINISH_ORDER_LEAVE', slot })
+                }
+              }}
+              role={ready && !orderState.leaving ? 'button' : undefined}
+              tabIndex={ready && !orderState.leaving ? 0 : undefined}
+              title={ready ? '点击领取奖励' : undefined}
+              aria-label={ready ? '订单已完成，点击领取奖励' : undefined}
+              onClick={() => {
+                if (ready && !orderState.leaving) finishOrder(slot)
+              }}
+              onKeyDown={(event) => {
+                if (!ready || orderState.leaving) return
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  finishOrder(slot)
+                }
+              }}
             >
               <CharacterAvatar role={ORDER_ROLES[order.id % ORDER_ROLES.length]} size="sm" />
               <div className={styles.orderNeeds}>
@@ -288,14 +306,6 @@ function MergeGame({ config }: { config: MergeConfig }) {
                 {!alreadyOwned && order.quantity > 1 && <strong>×{order.quantity}</strong>}
                 {alreadyOwned && <strong>{convertGold}</strong>}
               </div>
-              <button
-                type="button"
-                className={ready && !orderState.leaving ? styles.orderReadyButton : ''}
-                disabled={!ready || orderState.leaving}
-                onClick={() => finishOrder(slot)}
-              >
-                {ready ? '交付' : '收集'}
-              </button>
             </article>
           )
         })}
