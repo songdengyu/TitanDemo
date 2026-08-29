@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { QUALITY_COLORS } from '../data/weapons'
 import { getHeroAttackInterval, HERO_ATTACK_INTERVAL_SCALE } from '../data/heroes'
 import { getDeployedHeroIds } from '../utils/platformLayout'
-import { MAIN_HERO_SKILL_OWNER_ID, type SkillConfig } from '../data/skillConfig'
+import { MAIN_HERO_SKILL_OWNER_ID, getMainSkillLevel, type SkillConfig } from '../data/skillConfig'
 import { useCombatEffects } from '../hooks/useCombatEffects'
 import { useGameStore } from '../store/useGameStore'
 import { CombatEffectsLayer } from './CombatEffectsLayer'
@@ -170,7 +170,7 @@ export function CombatView() {
 
   const castSkill = useCallback((skill: SkillConfig) => {
     if (!combatActive) return
-    if ((state.skillLevels[skill.id] ?? 0) <= 0) return
+    if (getMainSkillLevel(skill, state.skillLevels) <= 0) return
     const arena = arenaRef.current
     const monsterEl = monsterRef.current
     if (!arena || !monsterEl) return
@@ -186,7 +186,7 @@ export function CombatView() {
   }, [castSkill])
 
   useEffect(() => {
-    if (!combatActive || !state.autoBattle || !basicSkill || (state.skillLevels[basicSkill.id] ?? 0) <= 0) return
+    if (!combatActive || !state.autoBattle || !basicSkill || getMainSkillLevel(basicSkill, state.skillLevels) <= 0) return
     const interval = setInterval(() => castSkillRef.current(basicSkill), mainFireInterval)
     return () => clearInterval(interval)
   }, [basicSkill, mainFireInterval, combatActive, state.autoBattle, state.skillLevels])
@@ -318,7 +318,7 @@ export function CombatView() {
                 onDeathComplete={completeMonsterDeath}
                 onSpawnComplete={completeMonsterSpawn}
               />
-              <div className={styles.heroRow} data-no-tap-attack>
+              <div className={styles.heroRow}>
                 <div ref={mainHeroRef} className={styles.heroWrap} data-combat-source="main">
                   <CharacterAvatar role={mainHero.role} size="lg" />
                   <span className={styles.heroDps}>{mainHeroDps} DPS</span>

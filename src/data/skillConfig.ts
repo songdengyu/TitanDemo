@@ -115,6 +115,30 @@ export async function loadSkillConfig(): Promise<SkillConfig[]> {
   return parseSkillConfig(await response.text())
 }
 
+export function isMainHeroBasicSkill(skill: SkillConfig): boolean {
+  return skill.ownerId === MAIN_HERO_SKILL_OWNER_ID && skill.type === 1
+}
+
+/** 普攻默认可用，技能书只负责升级，不再挡住点击出手。 */
+export function getMainSkillLevel(skill: SkillConfig, levels: Record<number, number>): number {
+  const level = levels[skill.id] ?? 0
+  return isMainHeroBasicSkill(skill) ? Math.max(1, level) : level
+}
+
+export function unlockBasicSkills(
+  skills: SkillConfig[],
+  levels: Record<number, number>,
+  heroLevel: number,
+): Record<number, number> {
+  const next = { ...levels }
+  for (const skill of skills) {
+    if (isMainHeroBasicSkill(skill) && skill.unlockLevel <= heroLevel && (next[skill.id] ?? 0) <= 0) {
+      next[skill.id] = 1
+    }
+  }
+  return next
+}
+
 export function getSkillValue(skill: SkillConfig, level: number): number {
   return skill.coefficient + Math.max(0, level - 1) * skill.perLevelIncrease
 }

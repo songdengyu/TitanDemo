@@ -28,8 +28,10 @@ import { loadMonsterConfig, type MonsterConfig } from '../data/monsterConfig'
 import { COMBAT_RESUME_GRACE_SEC } from '../data/combat'
 import {
   MAIN_HERO_SKILL_OWNER_ID,
+  getMainSkillLevel,
   getSkillValue,
   loadSkillConfig,
+  unlockBasicSkills,
   type SkillConfig,
 } from '../data/skillConfig'
 import {
@@ -274,7 +276,7 @@ function getMainHeroExpectedDamage(state: GameState): number {
   return state.skillCatalog
     .filter((skill) => skill.ownerId === MAIN_HERO_SKILL_OWNER_ID && skill.type !== 3)
     .reduce((dps, skill) => {
-      const level = state.skillLevels[skill.id] ?? 0
+      const level = getMainSkillLevel(skill, state.skillLevels)
       if (level <= 0 || skill.cooldownSeconds <= 0) return dps
       const interval = skill.type === 1
         ? skill.cooldownSeconds / state.equippedWeapon.attackSpeed
@@ -792,7 +794,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return { ...state, monsterConfigError: action.message }
 
     case 'LOAD_SKILLS':
-      return { ...state, skillCatalog: action.skills, skillConfigError: null }
+      return {
+        ...state,
+        skillCatalog: action.skills,
+        skillConfigError: null,
+        skillLevels: unlockBasicSkills(action.skills, state.skillLevels, state.mainHero.level),
+      }
 
     case 'SKILL_CONFIG_ERROR':
       return { ...state, skillConfigError: action.message }
@@ -1016,7 +1023,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const toggleAutoBattle = useCallback(() => dispatch({ type: 'TOGGLE_AUTO_BATTLE' }), [])
   const attackWithMainHero = useCallback((skillId: number) => {
     const skill = state.skillCatalog.find((item) => item.id === skillId)
-    const level = state.skillLevels[skillId] ?? 0
+    const level = skill ? getMainSkillLevel(skill, state.skillLevels) : 0
     if (!skill || level <= 0 || skill.ownerId !== MAIN_HERO_SKILL_OWNER_ID || skill.type === 3) {
       return { damage: 0, critical: false }
     }

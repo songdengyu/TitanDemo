@@ -12,6 +12,7 @@ export function HeroPanel() {
   const { state, totalDps, mainHeroDps, skillBookCount, deployHero, withdrawHero, upgradeHero, buyEquipment } = useGameStore()
   const [detail, setDetail] = useState<{ itemId: number; heroId: string } | null>(null)
   const [justUnlockedLevel, setJustUnlockedLevel] = useState<number | null>(null)
+  const [fx, setFx] = useState<{ id: string; type: 'upgrade' | 'deploy'; at: number } | null>(null)
   const deployedIds = getDeployedHeroIds(state.deployedSlots)
   const companions = state.equipmentCatalog.filter((item) => item.type === 9)
   const detailItem = detail ? state.equipmentCatalog.find((item) => item.id === detail.itemId) : null
@@ -43,13 +44,20 @@ export function HeroPanel() {
           return (
             <article
               key={item.id}
-              className={`${styles.companion} ${deployed ? styles.deployed : ''} ${!owned ? (canBuy ? styles.affordable : styles.locked) : ''}`}
+              className={`${styles.companion} ${deployed ? styles.deployed : ''} ${!owned ? (canBuy ? styles.affordable : styles.locked) : ''} ${fx?.id === hero.id && fx.type === 'deploy' ? styles.deployPulse : ''}`}
               onClick={() => {
                 setDetail({ itemId: item.id, heroId: hero.id })
                 setJustUnlockedLevel(null)
               }}
             >
-              <EquipmentArt item={item} size="md" />
+              {fx?.id === hero.id && (
+                <span
+                  key={fx.at}
+                  className={`${fx.type === 'deploy' ? `${styles.cardBurst} ${styles.fxGreen}` : `${styles.fxSweep} ${styles.fxGold}`}`}
+                  aria-hidden
+                />
+              )}
+              <EquipmentArt item={item} size="sm" />
               <div className={styles.companionInfo}>
                 <strong>{item.name}</strong><span>{owned ? `Lv.${hero.level}` : '未解锁'}</span>
                 <p>{item.description}</p>
@@ -57,13 +65,33 @@ export function HeroPanel() {
               <div className={styles.actions}>
                 {owned ? (
                   <>
-                    <button type="button" className={deployed ? styles.withdraw : styles.deploy} onClick={(event) => { event.stopPropagation(); deployed ? withdrawHero(hero.id) : deployHero(hero.id) }}>{deployed ? '下阵' : '上阵'}</button>
+                    <button
+                      type="button"
+                      className={`${deployed ? styles.withdraw : styles.deploy} ${fx?.id === hero.id && fx.type === 'deploy' ? styles.flashPress : ''}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        if (!deployed) setFx({ id: hero.id, type: 'deploy', at: Date.now() })
+                        deployed ? withdrawHero(hero.id) : deployHero(hero.id)
+                      }}
+                    >
+                      {fx?.id === hero.id && fx.type === 'deploy' && (
+                        <span key={fx.at} className={`${styles.fxBurst} ${styles.fxGreen}`} aria-hidden />
+                      )}
+                      {deployed ? '下阵' : '上阵'}
+                    </button>
                     <button
                       type="button"
                       className={canUpgrade ? styles.upgrade : ''}
                       disabled={!canUpgrade}
-                      onClick={(event) => { event.stopPropagation(); upgradeHero(hero.id) }}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setFx({ id: hero.id, type: 'upgrade', at: Date.now() })
+                        upgradeHero(hero.id)
+                      }}
                     >
+                      {fx?.id === hero.id && fx.type === 'upgrade' && (
+                        <span key={fx.at} className={`${styles.fxSweep} ${styles.fxGold}`} aria-hidden />
+                      )}
                       升级<br /><b>▤ {upgradeCost}</b>
                     </button>
                   </>
@@ -110,9 +138,13 @@ export function HeroPanel() {
                 disabled={!canUpgradeDetail}
                 onClick={() => {
                   setJustUnlockedLevel(detailHero.level + 1)
+                  setFx({ id: detailHero.id, type: 'upgrade', at: Date.now() })
                   upgradeHero(detailHero.id)
                 }}
               >
+                {fx?.id === detailHero.id && fx.type === 'upgrade' && (
+                  <span key={fx.at} className={`${styles.fxSweep} ${styles.fxGold}`} aria-hidden />
+                )}
                 {detailOwned ? <>升级至 Lv.{detailHero.level + 1}<b>▤ {detailUpgradeCost}</b></> : '需先解锁英雄'}
               </button>
             </footer>

@@ -3,6 +3,7 @@ import {
   MAIN_HERO_SKILL_OWNER_ID,
   formatSkillDescription,
   formatSkillValue,
+  getMainSkillLevel,
   type SkillConfig,
 } from '../data/skillConfig'
 import { useGameStore } from '../store/useGameStore'
@@ -12,7 +13,9 @@ import styles from './SkillsTab.module.css'
 export function SkillsTab() {
   const { state, skillBookCount, upgradeSkill } = useGameStore()
   const [selected, setSelected] = useState<SkillConfig | null>(null)
+  const [fx, setFx] = useState<{ id: number; unlock: boolean; at: number } | null>(null)
   const skills = state.skillCatalog.filter((skill) => skill.ownerId === MAIN_HERO_SKILL_OWNER_ID)
+  const selectedLevel = selected ? getMainSkillLevel(selected, state.skillLevels) : 0
 
   return (
     <div className={styles.tab}>
@@ -24,15 +27,22 @@ export function SkillsTab() {
       {state.skillConfigError && <p className={styles.error}>技能配置加载失败：{state.skillConfigError}</p>}
       <div className={`${styles.list} scroll-touch`}>
         {skills.map((skill) => {
-          const level = state.skillLevels[skill.id] ?? 0
+          const level = getMainSkillLevel(skill, state.skillLevels)
           const canUpgrade = skill.upgradeCost > 0 && skillBookCount >= skill.upgradeCost
           const displayLevel = Math.max(1, level)
           return (
             <article
               key={skill.id}
-              className={`${styles.skillCard} ${level === 0 ? styles.locked : ''} ${canUpgrade ? styles.affordable : ''}`}
+              className={`${styles.skillCard} ${level === 0 ? styles.locked : ''} ${canUpgrade ? (level === 0 ? styles.unlockable : styles.affordable) : ''}`}
               onClick={() => setSelected(skill)}
             >
+              {fx?.id === skill.id && (
+                <span
+                  key={fx.at}
+                  className={`${fx.unlock ? styles.cardBurst : styles.fxSweep} ${fx.unlock ? styles.fxCyan : styles.fxGold}`}
+                  aria-hidden
+                />
+              )}
               <div className={`${styles.skillIcon} ${styles[`type${skill.type}`]}`}>{skill.type === 1 ? '†' : skill.type === 2 ? '✦' : '◆'}</div>
               <div className={styles.skillInfo}>
                 <div className={styles.skillTitle}><strong>{skill.name}</strong><span>{level > 0 ? `Lv.${level}` : '未解锁'}</span></div>
@@ -44,13 +54,21 @@ export function SkillsTab() {
               </div>
               <button
                 type="button"
-                className={`${styles.upgradeBtn} ${canUpgrade ? styles.canBuy : ''}`}
+                className={`${styles.actionBtn} ${level === 0 ? styles.unlock : styles.upgrade} ${canUpgrade ? styles.ready : ''} ${fx?.id === skill.id && fx.unlock ? styles.flashPress : ''}`}
                 disabled={!canUpgrade}
                 onClick={(event) => {
                   event.stopPropagation()
+                  setFx({ id: skill.id, unlock: level === 0, at: Date.now() })
                   upgradeSkill(skill.id)
                 }}
               >
+                {fx?.id === skill.id && (
+                  <span
+                    key={fx.at}
+                    className={`${fx.unlock ? styles.fxBurst : styles.fxSweep} ${fx.unlock ? styles.fxCyan : styles.fxGold}`}
+                    aria-hidden
+                  />
+                )}
                 <span>{level === 0 ? '解锁' : '升级'}</span>
                 <strong>▤ {skill.upgradeCost}</strong>
               </button>
@@ -64,10 +82,10 @@ export function SkillsTab() {
             <button type="button" className={styles.closeBtn} onClick={() => setSelected(null)}>×</button>
             <div className={`${styles.skillIcon} ${styles.detailIcon}`}>{selected.type === 1 ? '†' : selected.type === 2 ? '✦' : '◆'}</div>
             <h3>{selected.name}</h3>
-            <p>{formatSkillDescription(selected, Math.max(1, state.skillLevels[selected.id] ?? 0))}</p>
+            <p>{formatSkillDescription(selected, Math.max(1, selectedLevel))}</p>
             <div className={styles.detailStats}>
               <span>类型<b>{selected.type === 1 ? '普攻' : selected.type === 2 ? '主动技能' : '被动技能'}</b></span>
-              <span>等级<b>{state.skillLevels[selected.id] ? `Lv.${state.skillLevels[selected.id]}` : '未解锁'}</b></span>
+              <span>等级<b>{selectedLevel ? `Lv.${selectedLevel}` : '未解锁'}</b></span>
               <span>冷却<b>{selected.cooldownSeconds > 0 ? `${selected.cooldownSeconds} 秒` : '无'}</b></span>
               <span>升级消耗<b>▤ {selected.upgradeCost}</b></span>
             </div>

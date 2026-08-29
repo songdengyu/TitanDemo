@@ -35,7 +35,6 @@ export const MonsterSprite = forwardRef<HTMLDivElement, MonsterSpriteProps>(
         ref={ref}
         className={`${styles.monster} ${hit && phase === 'fighting' ? styles.hit : ''} ${isBoss ? styles.boss : ''} ${phaseClass}`}
         aria-label={name}
-        data-no-tap-attack
       >
         <ArtIcon
           sheet="monsters"

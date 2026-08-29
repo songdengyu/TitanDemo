@@ -53,8 +53,8 @@
 
 .heroTitle {
   flex-shrink: 0;
-  padding: 11px 44px 11px 14px;
+  padding: 8px 44px 7px 14px;
   border-bottom: 1px solid rgba(139, 105, 20, 0.25);
   color: var(--fantasy-gold-light);
-  font: 700 15px var(--font-display);
+  font: 700 14px var(--font-display);
 }
