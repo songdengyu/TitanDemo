@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type PointerEvent } from 'react'
-import { createMergeGameState, createMergeReducer, canCompleteOrder, isHighestGeneratorOnBoard, WAREHOUSE_EXPANSION_COSTS, type MergeEffect } from '../data/mergeGame'
+import { createMergeReducer, canCompleteOrder, isHighestGeneratorOnBoard, restoreMergeState, persistMergeState, WAREHOUSE_EXPANSION_COSTS, type MergeEffect } from '../data/mergeGame'
 import { loadMergeConfig, type MergeConfig } from '../data/mergeConfig'
 import { getEquipmentDismantleGold } from '../data/equipmentConfig'
 import { useGameStore } from '../store/useGameStore'
@@ -64,15 +64,15 @@ function MergeGame({ config }: { config: MergeConfig }) {
     closeSecondaryView,
     showToast,
     syncMergeResources,
+    saveMergeSnapshot,
     grantEquipment,
   } = useGameStore()
   const reducer = useMemo(() => createMergeReducer(config), [config])
-  const initialConfig = useMemo(() => ({
-    ...config,
-    initialGold: gameState.gold,
-    initialGems: gameState.diamonds,
-  }), [config, gameState.gold, gameState.diamonds])
-  const [state, dispatch] = useReducer(reducer, initialConfig, createMergeGameState)
+  const [state, dispatch] = useReducer(
+    reducer,
+    undefined,
+    () => restoreMergeState(gameState.mergeSnapshot, config, gameState.gold, gameState.diamonds),
+  )
   const [warehouseOpen, setWarehouseOpen] = useState(false)
   const [warehouseDrag, setWarehouseDrag] = useState<WarehouseDragVisual | null>(null)
   const [dragVisual, setDragVisual] = useState<DragVisual | null>(null)
@@ -83,6 +83,10 @@ function MergeGame({ config }: { config: MergeConfig }) {
   useEffect(() => {
     syncMergeResources(state.gold, state.gems)
   }, [state.gold, state.gems, syncMergeResources])
+
+  useEffect(() => {
+    saveMergeSnapshot(persistMergeState(state))
+  }, [state, saveMergeSnapshot])
 
   useEffect(() => {
     state.effects.forEach((effect) => {
@@ -470,14 +474,21 @@ function MergeGame({ config }: { config: MergeConfig }) {
   )
 }
 
+let cachedMergeConfig: MergeConfig | null = null
+
 export function MergeGameScreen() {
   const { closeSecondaryView } = useGameStore()
-  const [config, setConfig] = useState<MergeConfig | null>(null)
+  const [config, setConfig] = useState<MergeConfig | null>(cachedMergeConfig)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (cachedMergeConfig) return
     let active = true
-    loadMergeConfig().then((loaded) => active && setConfig(loaded)).catch((reason: unknown) => {
+    loadMergeConfig().then((loaded) => {
+      if (!active) return
+      cachedMergeConfig = loaded
+      setConfig(loaded)
+    }).catch((reason: unknown) => {
       if (active) setError(reason instanceof Error ? reason.message : '未知配置错误')
     })
     return () => { active = false }

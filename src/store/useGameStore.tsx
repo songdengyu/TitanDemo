@@ -26,6 +26,7 @@ import { applyPassiveSkills, calculateExpectedDamage, rollDamage, sumEquipmentSt
 import { createMonster } from '../data/monsters'
 import { loadMonsterConfig, type MonsterConfig } from '../data/monsterConfig'
 import { COMBAT_RESUME_GRACE_SEC } from '../data/combat'
+import type { MergeGameState } from '../data/mergeGame'
 import {
   MAIN_HERO_SKILL_OWNER_ID,
   getMainSkillLevel,
@@ -115,6 +116,7 @@ export interface GameState {
   equipmentPickerType: number | null
   selectedEquipmentId: number | null
   dialog: DialogConfig | null
+  mergeSnapshot: MergeGameState | null
 }
 
 export interface DialogConfig {
@@ -168,6 +170,7 @@ type GameAction =
   | { type: 'SELECT_EQUIPMENT'; equipmentId: number }
   | { type: 'EQUIP_EQUIPMENT'; equipmentId: number; dismantlePrevious?: boolean; dismantleGold?: number }
   | { type: 'DISMANTLE_EQUIPMENT'; equipmentId: number; gold: number }
+  | { type: 'SAVE_MERGE_SNAPSHOT'; snapshot: MergeGameState }
 
 const initialMonster = createMonster(1, 0, false)
 
@@ -215,6 +218,7 @@ const initialState: GameState = {
   equipmentPickerType: null,
   selectedEquipmentId: null,
   dialog: null,
+  mergeSnapshot: null,
 }
 
 function remapMonsterHp(current: MonsterState, configured: MonsterState): MonsterState {
@@ -756,6 +760,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         combatGraceRemaining: COMBAT_RESUME_GRACE_SEC,
       }
 
+    case 'SAVE_MERGE_SNAPSHOT':
+      return { ...state, mergeSnapshot: action.snapshot }
+
     case 'OPEN_HERO_OVERLAY':
       return { ...state, showHeroOverlay: true, activeTab: 'heroes' }
 
@@ -941,6 +948,7 @@ interface GameContextValue {
   completeMonsterDeath: () => void
   completeMonsterSpawn: () => void
   syncMergeResources: (gold: number, diamonds: number) => void
+  saveMergeSnapshot: (snapshot: MergeGameState) => void
   grantEquipment: (equipmentId: number, quantity: number) => void
   buyEquipment: (equipmentId: number) => void
   selectEquipment: (equipmentId: number) => void
@@ -1075,6 +1083,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const showToast = useCallback((message: string) => dispatch({ type: 'SHOW_TOAST', message }), [])
   const syncMergeResources = useCallback(
     (gold: number, diamonds: number) => dispatch({ type: 'SYNC_MERGE_RESOURCES', gold, diamonds }),
+    [],
+  )
+  const saveMergeSnapshot = useCallback(
+    (snapshot: MergeGameState) => dispatch({ type: 'SAVE_MERGE_SNAPSHOT', snapshot }),
     [],
   )
   const grantEquipment = useCallback((equipmentId: number, quantity: number) => {
@@ -1246,6 +1258,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       completeMonsterDeath,
       completeMonsterSpawn,
       syncMergeResources,
+      saveMergeSnapshot,
       grantEquipment,
       buyEquipment,
       selectEquipment,
@@ -1296,6 +1309,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       completeMonsterDeath,
       completeMonsterSpawn,
       syncMergeResources,
+      saveMergeSnapshot,
       grantEquipment,
       buyEquipment,
       selectEquipment,

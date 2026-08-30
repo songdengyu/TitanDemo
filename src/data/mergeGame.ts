@@ -59,6 +59,33 @@ function createOrders(config: MergeConfig) {
   }
 }
 
+export function persistMergeState(state: MergeGameState): MergeGameState {
+  return {
+    ...state,
+    board: state.board.map((cell) => ({ ...cell })),
+    warehouse: [...state.warehouse],
+    activeOrders: state.activeOrders.map((order) => ({ ...order })),
+    selectedCell: null,
+    selectedWarehouse: null,
+    message: null,
+    spawnedCell: null,
+    effects: [],
+  }
+}
+
+export function restoreMergeState(
+  snapshot: MergeGameState | null,
+  config: MergeConfig,
+  gold: number,
+  gems: number,
+): MergeGameState {
+  const matchesBoard = snapshot !== null && snapshot.board.length === config.initialBoard.length
+  const base = matchesBoard
+    ? persistMergeState(snapshot)
+    : createMergeGameState({ ...config, initialGold: gold, initialGems: gems })
+  return { ...base, gold, gems }
+}
+
 export function createMergeGameState(config: MergeConfig): MergeGameState {
   return {
     board: config.initialBoard.map((cell) => ({ ...cell, rewardClaimed: false })),
