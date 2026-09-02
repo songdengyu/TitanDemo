@@ -4,7 +4,7 @@ import styles from './EquipmentArt.module.css'
 
 interface EquipmentArtProps {
   item: EquipmentConfig
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'xs' | 'sm' | 'md' | 'lg'
 }
 
 export function EquipmentArt({ item, size = 'md' }: EquipmentArtProps) {

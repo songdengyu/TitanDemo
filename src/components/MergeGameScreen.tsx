@@ -4,6 +4,7 @@ import { loadMergeConfig, type MergeConfig } from '../data/mergeConfig'
 import { getEquipmentDismantleGold } from '../data/equipmentConfig'
 import { useGameStore } from '../store/useGameStore'
 import { CharacterAvatar } from './CharacterAvatar'
+import { EquipmentArt } from './EquipmentArt'
 import { MergePiece } from './MergePiece'
 import styles from './MergeGameScreen.module.css'
 
@@ -302,11 +303,11 @@ function MergeGame({ config }: { config: MergeConfig }) {
               </div>
               <div
                 className={`${styles.orderRewardPreview} ${alreadyOwned ? styles.orderGoldReward : styles[reward.className]}`}
-                title={alreadyOwned ? `已拥有，转化为 ${convertGold} 金币` : `${reward.label} ×${order.quantity}`}
-                aria-label={alreadyOwned ? `订单奖励已拥有，转化为 ${convertGold} 金币` : `订单奖励：${reward.label}，数量 ${order.quantity}`}
+                title={alreadyOwned ? `已拥有 ${equipment?.name ?? reward.label}，转化为 ${convertGold} 金币` : `${equipment?.name ?? reward.label} ×${order.quantity}`}
+                aria-label={alreadyOwned ? `订单奖励 ${equipment?.name ?? reward.label} 已拥有，转化为 ${convertGold} 金币` : `订单奖励：${equipment?.name ?? reward.label}，数量 ${order.quantity}`}
               >
                 <small className={styles.rewardLabel}>{alreadyOwned ? '转化' : '奖励'}</small>
-                <span>{alreadyOwned ? '●' : reward.symbol}</span>
+                {alreadyOwned ? <span>●</span> : equipment && <EquipmentArt item={equipment} size="xs" />}
                 {!alreadyOwned && order.quantity > 1 && <strong>×{order.quantity}</strong>}
                 {alreadyOwned && <strong>{convertGold}</strong>}
               </div>
@@ -315,6 +316,7 @@ function MergeGame({ config }: { config: MergeConfig }) {
         })}
         {state.effects.filter((effect) => effect.kind === 'order-reward' || effect.kind === 'order-gold').map((effect) => {
           const reward = EQUIPMENT_EFFECTS[effect.equipmentType ?? 1] ?? EQUIPMENT_EFFECTS[1]
+          const equipment = effect.equipmentId ? config.equipment.get(effect.equipmentId) : null
           const converted = effect.kind === 'order-gold'
           return (
             <span
@@ -324,8 +326,8 @@ function MergeGame({ config }: { config: MergeConfig }) {
               onAnimationEnd={() => dispatch({ type: 'CLEAR_EFFECT', id: effect.id })}
             >
               <span className={styles.rewardBurst} />
-              <span className={styles.rewardIcon}>{converted ? '●' : reward.symbol}</span>
-              <strong>{converted ? `+${effect.amount ?? 0} 金币` : reward.label}</strong>
+              <span className={styles.rewardIcon}>{converted ? '●' : equipment && <EquipmentArt item={equipment} size="sm" />}</span>
+              <strong>{converted ? `+${effect.amount ?? 0} 金币` : equipment?.name ?? reward.label}</strong>
             </span>
           )
         })}
