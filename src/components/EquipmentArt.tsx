@@ -1,5 +1,5 @@
 import type { EquipmentConfig } from '../data/equipmentConfig'
-import { ArtIcon } from './ArtIcon'
+import { ArtIcon, type ArtSheet } from './ArtIcon'
 import styles from './EquipmentArt.module.css'
 
 interface EquipmentArtProps {
@@ -8,14 +8,14 @@ interface EquipmentArtProps {
 }
 
 export function EquipmentArt({ item, size = 'md' }: EquipmentArtProps) {
-  const [sheet, name] = item.icon.split(':')
+  const sheet = item.icon.replace(/\.svg$/, '')
   const validSheet = sheet === 'weapons' || sheet === 'heroes' || sheet === 'ui'
   return (
     <span className={`${styles.art} ${styles[size]} ${styles[`type${item.type}`]}`}>
       {validSheet ? (
         <ArtIcon
-          sheet={sheet}
-          name={name}
+          sheet={sheet as ArtSheet}
+          name={item.iconName}
           viewBox={sheet === 'weapons' || sheet === 'heroes' ? '0 0 96 96' : '0 0 64 64'}
           className={styles.icon}
         />

@@ -16,6 +16,7 @@ export interface MergeItemConfig {
   openCost: number | null
   drops: { itemId: number; weight: number }[]
   icon: string
+  iconName: string
   description: string
 }
 
@@ -86,7 +87,8 @@ function parseItems(text: string): MergeItemConfig[] {
       name: required(row, 'name', `棋子 ${id}`),
       openCost: optionalInteger(row.open_cost, `棋子 ${id} 开启金币`),
       drops: parseDrops(row.drop_pool, id),
-      icon: row.icon,
+      icon: required(row, 'icon', `棋子 ${id}`),
+      iconName: required(row, 'iconName', `棋子 ${id}`),
       description: row.description || '',
     }
   })

@@ -214,6 +214,10 @@ function MergeGame({ config }: { config: MergeConfig }) {
     if (!drag || drag.pointerId !== event.pointerId) return
     if (!drag.dragging) {
       dispatch({ type: 'SELECT_CELL', index })
+      const itemId = state.board[index]?.itemId
+      if (itemId !== null && itemId !== undefined && config.itemById.get(itemId)?.itemType === 'generator') {
+        dispatch({ type: 'USE_CELL', index })
+      }
       return
     }
     const targetElement = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-cell-index]')
@@ -355,7 +359,7 @@ function MergeGame({ config }: { config: MergeConfig }) {
                 type="button"
                 data-cell-index={index}
                 className={`${styles.cell} ${styles[`lock${cell.lock}`]} ${selected ? styles.cellSelected : ''} ${activeGenerator ? styles.activeGenerator : ''} ${isDropTarget ? (validDropTarget ? styles.validDrop : styles.invalidDrop) : ''}`}
-                onDoubleClick={() => dispatch({ type: 'USE_CELL', index })}
+                onDoubleClick={() => item?.itemType === 'special' && dispatch({ type: 'USE_CELL', index })}
                 onPointerDown={(event) => onPointerDown(event, index)}
                 onPointerMove={onPointerMove}
                 onPointerUp={(event) => onPointerUp(event, index)}
@@ -437,7 +441,9 @@ function MergeGame({ config }: { config: MergeConfig }) {
           <strong>{selectedItem ? `${selectedItem.name} · Lv.${selectedItem.level}` : '点击棋子查看说明'}</strong>
           <small>{selectedItem?.description ?? '拖动相同棋子进行合成，半锁棋子需要合成解锁。'}</small>
         </div>
-        {state.selectedCell !== null && state.board[state.selectedCell]?.lock === 0 && (
+        {state.selectedCell !== null
+          && state.board[state.selectedCell]?.lock === 0
+          && selectedItem?.itemType !== 'generator' && (
           <button type="button" onClick={() => dispatch({ type: 'STORE_CELL', index: state.selectedCell! })}>存入</button>
         )}
       </section>

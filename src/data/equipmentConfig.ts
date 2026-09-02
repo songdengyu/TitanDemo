@@ -7,6 +7,7 @@ export interface EquipmentConfig {
   diamond: number | null
   description: string
   icon: string
+  iconName: string
   attack: number | null
   attackBonus: number | null
   critRate: number | null
@@ -70,6 +71,7 @@ export function parseEquipmentConfig(text: string): EquipmentConfig[] {
       diamond: optionalInteger(row.diamond),
       description: required(row, 'description'),
       icon: required(row, 'icon'),
+      iconName: required(row, 'iconName'),
       attack: optionalNumber(row.attack, 'attack'),
       attackBonus: optionalNumber(row.attack_bonus, 'attack_bonus'),
       critRate: optionalNumber(row.crit_rate, 'crit_rate'),

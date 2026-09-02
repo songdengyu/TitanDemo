@@ -321,7 +321,7 @@ export function CombatView() {
               <div className={styles.heroRow}>
                 <div ref={mainHeroRef} className={styles.heroWrap} data-combat-source="main">
                   <CharacterAvatar role={mainHero.role} size="lg" />
-                  <span className={styles.heroDps}>{mainHeroDps} DPS</span>
+                  <span className={styles.heroDps}>{Math.floor(mainHeroDps)} DPS</span>
                 </div>
                 <button
                   type="button"

@@ -372,6 +372,9 @@ export function createMergeReducer(config: MergeConfig) {
       case 'STORE_CELL': {
         const cell = state.board[action.index]
         if (!cell || cell.lock !== 0 || cell.itemId === null) return state
+        if (config.itemById.get(cell.itemId)?.itemType === 'generator') {
+          return { ...state, message: '棋子生成器不能放入仓库' }
+        }
         if (state.warehouse.length >= state.warehouseCapacity) return { ...state, message: '仓库已满' }
         const board = state.board.map((entry) => ({ ...entry }))
         board[action.index].itemId = null

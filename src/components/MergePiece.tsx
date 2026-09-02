@@ -1,16 +1,6 @@
 import type { MergeItemConfig } from '../data/mergeConfig'
+import { ArtIcon, type ArtSheet } from './ArtIcon'
 import styles from './MergePiece.module.css'
-
-const CHAIN_SYMBOLS: Record<number, string> = {
-  1: '▣',
-  2: '◆',
-  3: '⌂',
-  4: '†',
-  5: '⬟',
-  6: '♦',
-  7: '✦',
-  8: '●',
-}
 
 interface MergePieceProps {
   item: MergeItemConfig
@@ -20,17 +10,21 @@ interface MergePieceProps {
 }
 
 export function MergePiece({ item, selected = false, shaking = false, compact = false }: MergePieceProps) {
+  const sheet = item.icon.replace(/\.svg$/, '')
+  const validSheet = sheet === 'weapons' || sheet === 'heroes' || sheet === 'ui' || sheet === 'monsters' || sheet === 'items'
   return (
     <span
       className={`${styles.piece} ${styles[`chain${item.chain}`]} ${styles[item.itemType]} ${selected ? styles.selected : ''} ${shaking ? styles.shaking : ''} ${compact ? styles.compact : ''}`}
       title={`${item.name} Lv.${item.level}`}
     >
-      {item.itemType === 'generator' ? (
-        <span className={styles.questionMark} aria-hidden>?</span>
-      ) : (
-        <span className={styles.symbol}>{CHAIN_SYMBOLS[item.chain] ?? '◆'}</span>
-      )}
-      <span className={styles.level}>{item.level}</span>
+      {validSheet ? (
+        <ArtIcon
+          sheet={sheet as ArtSheet}
+          name={item.iconName}
+          viewBox={sheet === 'ui' ? '0 0 64 64' : sheet === 'monsters' ? '0 0 120 120' : '0 0 96 96'}
+          className={styles.icon}
+        />
+      ) : <span className={styles.questionMark} aria-hidden>?</span>}
     </span>
   )
 }
